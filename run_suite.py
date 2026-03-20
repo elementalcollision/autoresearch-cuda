@@ -401,7 +401,7 @@ def run_agent(dataset_name, tag, max_experiments=80):
 
     try:
         return run_headless(
-            training_script="train_mlx.py",
+            training_script="train_cuda.py",
             results_path=results_tsv,
             tag=run_tag,
             max_experiments=max_experiments,

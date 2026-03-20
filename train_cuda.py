@@ -1,29 +1,15 @@
 """
-Autoresearch pretraining script — Apple Silicon MPS backend.
+Autoresearch pretraining script — CUDA backend.
 Single-GPU, single-file (plus backends/ for optimizer and hardware detection).
-Usage: uv run train.py
+Optimized for NVIDIA GPUs: torch.compile, flash attention, bf16 autocast.
+Usage: AUTORESEARCH_BACKEND=cuda uv run train.py
 """
 
 import os
 import sys
-
-# Backend dispatch: if MLX is selected, exec train_mlx.py instead
-_BACKEND = os.environ.get("AUTORESEARCH_BACKEND", "auto").lower()
-if _BACKEND == "auto":
-    from backends import detect_backend
-    _BACKEND = detect_backend()
-if _BACKEND == "cuda":
-    os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(__file__), "train_cuda.py")] + sys.argv[1:])
-if _BACKEND == "mlx":
-    os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(__file__), "train_mlx.py")] + sys.argv[1:])
-
-# If we get here, we're running the MPS backend
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-
 import gc
 import math
 import time
-import contextlib
 from dataclasses import dataclass, asdict
 
 import torch
@@ -31,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from backends import get_hardware_info, suggest_hyperparameters, get_peak_flops, sync_device, get_peak_memory_mb
-from backends.muon_mps import MuonAdamW
+from backends.muon_cuda import MuonAdamW
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
 
 # ---------------------------------------------------------------------------
@@ -109,7 +95,7 @@ class CausalSelfAttention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # Use PyTorch SDPA instead of FlashAttention-3
+        # SDPA — on CUDA this auto-dispatches to FlashAttention-2 when is_causal=True
         window = window_size[0] if isinstance(window_size, (tuple, list)) else window_size
         if window > 0 and window < T:
             # Sliding window: create causal mask with window limit
@@ -287,7 +273,7 @@ class GPT(nn.Module):
                 kind='muon', params=group_params, lr=matrix_lr,
                 momentum=0.95, ns_steps=5, beta2=0.95, weight_decay=weight_decay,
             ))
-        optimizer = MuonAdamW(param_groups)
+        optimizer = MuonAdamW(param_groups, device="cuda")
         for group in optimizer.param_groups:
             group["initial_lr"] = group["lr"]
         return optimizer
@@ -354,22 +340,20 @@ t_start = time.time()
 torch.manual_seed(42)
 torch.set_float32_matmul_precision("high")
 
-# MPS device setup
-device = torch.device("mps")
-device_type = "mps"
+# CUDA device setup
+device = torch.device("cuda")
+device_type = "cuda"
 
-# MPS autocast: try bf16, fall back to no autocast
-try:
-    autocast_ctx = torch.amp.autocast(device_type="mps", dtype=torch.bfloat16)
-    # Test if it actually works
-    with autocast_ctx:
-        _test = torch.ones(1, device=device) + torch.ones(1, device=device)
-    del _test
-except (RuntimeError, TypeError):
-    autocast_ctx = contextlib.nullcontext()
+# bf16 autocast — native on H100/H200
+autocast_ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+
+# Log flash attention status
+flash_sdp = torch.backends.cuda.flash_sdp_enabled()
+print(f"FlashAttention via SDPA: {'enabled' if flash_sdp else 'disabled'}")
 
 PEAK_FLOPS = get_peak_flops(_hw_info)
-print(f"Backend: MPS ({_hw_info['chip_name']})")
+print(f"Backend: CUDA ({_hw_info['chip_name']})")
+print(f"VRAM: {_hw_info['memory_gb']:.0f} GB")
 print(f"Peak bf16 FLOPS: {PEAK_FLOPS:.2e}")
 
 tokenizer = Tokenizer.from_directory()
@@ -389,7 +373,7 @@ def build_model_config(depth):
 config = build_model_config(DEPTH)
 print(f"Model config: {asdict(config)}")
 
-# Build model on MPS directly (no meta device trick — MPS doesn't support to_empty)
+# Build model on CUDA
 model = GPT(config).to(device)
 model.init_weights()
 
@@ -414,9 +398,11 @@ optimizer = model.setup_optimizer(
     weight_decay=WEIGHT_DECAY,
 )
 
-# No torch.compile on MPS — run in eager mode
+# torch.compile for CUDA — the key performance advantage
+print("Compiling model with torch.compile (reduce-overhead mode)...")
+model = torch.compile(model, mode="reduce-overhead")
 
-train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", backend="mps")
+train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", backend="cuda")
 x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
@@ -475,8 +461,8 @@ while True:
 
     train_loss_f = train_loss.item()
 
-    # Fast fail: abort if loss is exploding (skip NaN check — MPS can have transient NaN)
-    if train_loss_f > 100:
+    # Fast fail: abort if loss is exploding
+    if train_loss_f > 100 or math.isnan(train_loss_f):
         print("FAIL")
         exit(1)
 
@@ -498,13 +484,15 @@ while True:
 
     print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
 
-    # GC management (Python's GC causes ~500ms stalls)
+    # GC management
     if step == 0:
         gc.collect()
+        torch.cuda.empty_cache()
         gc.freeze()
         gc.disable()
     elif (step + 1) % 5000 == 0:
         gc.collect()
+        torch.cuda.empty_cache()
 
     step += 1
 
@@ -519,7 +507,7 @@ total_tokens = step * TOTAL_BATCH_SIZE
 # Final eval
 model.eval()
 with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE, backend="mps")
+    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE, backend="cuda")
 
 # Final summary
 t_end = time.time()
@@ -537,5 +525,5 @@ print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
 print(f"num_steps:        {step}")
 print(f"num_params_M:     {num_params / 1e6:.1f}")
 print(f"depth:            {DEPTH}")
-print(f"backend:          mps")
+print(f"backend:          cuda")
 print(f"chip:             {_hw_info['chip_name']}")

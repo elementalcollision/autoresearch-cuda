@@ -8,7 +8,7 @@ Usage:
 
 Data and tokenizer are stored in ~/.cache/autoresearch/.
 
-This version supports both PyTorch (MPS) and MLX backends.
+This version supports CUDA, PyTorch MPS, and MLX backends.
 """
 
 import os
@@ -292,7 +292,18 @@ def get_token_bytes(backend=None):
     pt_path = os.path.join(TOKENIZER_DIR, "token_bytes.pt")
 
     if backend is None:
-        backend = "mlx" if _USE_MLX else "mps"
+        if _USE_TORCH:
+            import torch
+            if torch.cuda.is_available():
+                backend = "cuda"
+            elif torch.backends.mps.is_available():
+                backend = "mps"
+            else:
+                backend = "cpu"
+        elif _USE_MLX:
+            backend = "mlx"
+        else:
+            backend = "cpu"
 
     if os.path.exists(npy_path):
         arr = np.load(npy_path)
@@ -307,7 +318,12 @@ def get_token_bytes(backend=None):
         return mx.array(arr, dtype=mx.int32)
     else:
         import torch
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if backend == "cuda":
+            device = "cuda"
+        elif backend == "mps" and torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
         return torch.tensor(arr, dtype=torch.int32, device=device)
 
 
@@ -340,10 +356,21 @@ def make_dataloader(tokenizer, B, T, split, buffer_size=1000, backend=None):
     When no document fits remaining space, crops shortest doc to fill exactly.
     100% utilization (no padding).
 
-    backend: 'mps', 'mlx', or None (auto-detect)
+    backend: 'cuda', 'mps', 'mlx', or None (auto-detect)
     """
     if backend is None:
-        backend = "mlx" if _USE_MLX else "mps"
+        if _USE_TORCH:
+            import torch
+            if torch.cuda.is_available():
+                backend = "cuda"
+            elif torch.backends.mps.is_available():
+                backend = "mps"
+            else:
+                backend = "cpu"
+        elif _USE_MLX:
+            backend = "mlx"
+        else:
+            backend = "cpu"
 
     assert split in ["train", "val"]
     row_capacity = T + 1
@@ -398,7 +425,12 @@ def make_dataloader(tokenizer, B, T, split, buffer_size=1000, backend=None):
             targets = mx.array(targets_np, dtype=mx.int32)
         else:
             import torch
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            if backend == "cuda":
+                device = "cuda"
+            elif backend == "mps" and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
             inputs = torch.tensor(inputs_np, dtype=torch.long, device=device)
             targets = torch.tensor(targets_np, dtype=torch.long, device=device)
 
@@ -417,7 +449,18 @@ def evaluate_bpb(model, tokenizer, batch_size, backend=None):
     Uses fixed MAX_SEQ_LEN so results are comparable across configs.
     """
     if backend is None:
-        backend = "mlx" if _USE_MLX else "mps"
+        if _USE_TORCH:
+            import torch as _torch
+            if _torch.cuda.is_available():
+                backend = "cuda"
+            elif _torch.backends.mps.is_available():
+                backend = "mps"
+            else:
+                backend = "cpu"
+        elif _USE_MLX:
+            backend = "mlx"
+        else:
+            backend = "cpu"
 
     token_bytes = get_token_bytes(backend=backend)
     val_loader = make_dataloader(tokenizer, batch_size, MAX_SEQ_LEN, "val", backend=backend)

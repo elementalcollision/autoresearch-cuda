@@ -1,6 +1,6 @@
 """
-Hardware auto-detection, chip tier classification, and hyperparameter suggestions
-for Apple Silicon Macs. Supports both PyTorch MPS and MLX backends.
+Hardware auto-detection, chip tier classification, and hyperparameter suggestions.
+Supports CUDA (NVIDIA GPUs), PyTorch MPS, and MLX backends.
 """
 
 import os
@@ -12,12 +12,22 @@ import re
 def detect_backend():
     """
     Auto-detect best available backend.
-    Priority: MLX > MPS (MLX is generally faster for training on Apple Silicon).
-    Override with AUTORESEARCH_BACKEND env var: 'mlx', 'mps', or 'auto'.
+    Priority: CUDA > MLX > MPS.
+    Override with AUTORESEARCH_BACKEND env var: 'cuda', 'mlx', 'mps', or 'auto'.
     """
     override = os.environ.get("AUTORESEARCH_BACKEND", "auto").lower()
-    if override not in ("auto", "mlx", "mps"):
-        raise ValueError(f"AUTORESEARCH_BACKEND must be 'auto', 'mlx', or 'mps', got '{override}'")
+    if override not in ("auto", "cuda", "mlx", "mps"):
+        raise ValueError(f"AUTORESEARCH_BACKEND must be 'auto', 'cuda', 'mlx', or 'mps', got '{override}'")
+
+    if override == "cuda":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+            raise RuntimeError("PyTorch is installed but CUDA is not available")
+        except ImportError:
+            raise RuntimeError("AUTORESEARCH_BACKEND=cuda but torch is not installed. "
+                               "Install with: uv pip install 'autoresearch-cuda[cuda]'")
 
     if override == "mlx":
         try:
@@ -26,8 +36,7 @@ def detect_backend():
                 return "mlx"
             raise RuntimeError("MLX is installed but Metal is not available")
         except ImportError:
-            raise RuntimeError("AUTORESEARCH_BACKEND=mlx but mlx is not installed. "
-                               "Install with: uv pip install 'autoresearch-arm[mlx]'")
+            raise RuntimeError("AUTORESEARCH_BACKEND=mlx but mlx is not installed")
 
     if override == "mps":
         try:
@@ -36,32 +45,36 @@ def detect_backend():
                 return "mps"
             raise RuntimeError("PyTorch is installed but MPS is not available")
         except ImportError:
-            raise RuntimeError("AUTORESEARCH_BACKEND=mps but torch is not installed. "
-                               "Install with: uv pip install 'autoresearch-arm[mps]'")
+            raise RuntimeError("AUTORESEARCH_BACKEND=mps but torch is not installed")
 
-    # Auto-detect: prefer MLX
-    if sys.platform != "darwin":
-        raise RuntimeError("autoresearch-arm requires macOS with Apple Silicon")
-
-    try:
-        import mlx.core as mx
-        if mx.metal.is_available():
-            return "mlx"
-    except ImportError:
-        pass
-
+    # Auto-detect: prefer CUDA > MLX > MPS
     try:
         import torch
-        if torch.backends.mps.is_available():
-            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
     except ImportError:
         pass
+
+    if sys.platform == "darwin":
+        try:
+            import mlx.core as mx
+            if mx.metal.is_available():
+                return "mlx"
+        except ImportError:
+            pass
+
+        try:
+            import torch
+            if torch.backends.mps.is_available():
+                return "mps"
+        except ImportError:
+            pass
 
     raise RuntimeError(
         "No compatible backend found. Install at least one:\n"
-        "  MLX:  uv pip install 'autoresearch-arm[mlx]'\n"
-        "  MPS:  uv pip install 'autoresearch-arm[mps]'\n"
-        "  Both: uv pip install 'autoresearch-arm[all]'"
+        "  CUDA: uv pip install 'autoresearch-cuda[cuda]'\n"
+        "  MLX:  uv pip install mlx  (macOS only)\n"
+        "  MPS:  uv pip install torch  (macOS only)"
     )
 
 
@@ -69,6 +82,7 @@ def get_hardware_info():
     """
     Returns hardware info dict with keys:
       memory_gb, chip_name, chip_tier, gpu_cores (estimated)
+    Works for both NVIDIA GPUs and Apple Silicon.
     """
     info = {
         "memory_gb": 0,
@@ -77,52 +91,74 @@ def get_hardware_info():
         "gpu_cores": 0,
     }
 
-    # Memory
+    # Try NVIDIA GPU first
     try:
-        mem_bytes = int(subprocess.check_output(
-            ["sysctl", "-n", "hw.memsize"], text=True).strip())
-        info["memory_gb"] = mem_bytes / (1024 ** 3)
-    except (subprocess.CalledProcessError, ValueError):
+        import torch
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(0)
+            info["chip_name"] = props.name
+            info["memory_gb"] = props.total_mem / (1024 ** 3)
+            info["gpu_cores"] = props.multi_processor_count
+
+            # Classify tier based on GPU name
+            name_lower = props.name.lower()
+            if any(x in name_lower for x in ["h100", "h200", "a100", "h800"]):
+                info["chip_tier"] = "datacenter"
+            elif any(x in name_lower for x in ["l40", "a40", "rtx 6000", "a6000"]):
+                info["chip_tier"] = "professional"
+            elif any(x in name_lower for x in ["rtx 4000", "rtx 3000", "rtx 5000"]):
+                info["chip_tier"] = "professional"
+            elif "rtx" in name_lower:
+                info["chip_tier"] = "consumer"
+            else:
+                info["chip_tier"] = "unknown"
+            return info
+    except ImportError:
         pass
 
-    # Chip name
-    try:
-        brand = subprocess.check_output(
-            ["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
-        info["chip_name"] = brand
-    except subprocess.CalledProcessError:
-        pass
+    # Fall back to Apple Silicon detection
+    if sys.platform == "darwin":
+        try:
+            mem_bytes = int(subprocess.check_output(
+                ["sysctl", "-n", "hw.memsize"], text=True).strip())
+            info["memory_gb"] = mem_bytes / (1024 ** 3)
+        except (subprocess.CalledProcessError, ValueError):
+            pass
 
-    # Classify chip tier
-    chip = info["chip_name"].lower()
-    if "ultra" in chip:
-        info["chip_tier"] = "ultra"
-        info["gpu_cores"] = 80  # M4 Ultra estimate
-    elif "max" in chip:
-        info["chip_tier"] = "max"
-        info["gpu_cores"] = 40  # M4 Max estimate
-    elif "pro" in chip:
-        info["chip_tier"] = "pro"
-        info["gpu_cores"] = 18
-    elif "m1" in chip or "m2" in chip or "m3" in chip or "m4" in chip:
-        info["chip_tier"] = "base"
-        info["gpu_cores"] = 10
-    else:
-        info["chip_tier"] = "unknown"
+        try:
+            brand = subprocess.check_output(
+                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
+            info["chip_name"] = brand
+        except subprocess.CalledProcessError:
+            pass
 
-    # Refine GPU core estimates by specific chip model
-    m = re.search(r"(m[1-5])\s*(pro|max|ultra)?", chip)
-    if m:
-        gen = m.group(1)
-        tier = m.group(2) or "base"
-        # Rough estimates for GPU cores by generation/tier
-        gpu_core_map = {
-            ("m1", "base"): 8, ("m1", "pro"): 16, ("m1", "max"): 32, ("m1", "ultra"): 64,
-            ("m2", "base"): 10, ("m2", "pro"): 19, ("m2", "max"): 38, ("m2", "ultra"): 76,
-            ("m3", "base"): 10, ("m3", "pro"): 18, ("m3", "max"): 40, ("m3", "ultra"): 76,
-            ("m4", "base"): 10, ("m4", "pro"): 20, ("m4", "max"): 40, ("m4", "ultra"): 80,
-        }
-        info["gpu_cores"] = gpu_core_map.get((gen, tier), info["gpu_cores"])
+        chip = info["chip_name"].lower()
+        if "ultra" in chip:
+            info["chip_tier"] = "ultra"
+            info["gpu_cores"] = 80
+        elif "max" in chip:
+            info["chip_tier"] = "max"
+            info["gpu_cores"] = 40
+        elif "pro" in chip:
+            info["chip_tier"] = "pro"
+            info["gpu_cores"] = 18
+        elif "m1" in chip or "m2" in chip or "m3" in chip or "m4" in chip:
+            info["chip_tier"] = "base"
+            info["gpu_cores"] = 10
+        else:
+            info["chip_tier"] = "unknown"
+
+        m = re.search(r"(m[1-5])\s*(pro|max|ultra)?", chip)
+        if m:
+            gen = m.group(1)
+            tier = m.group(2) or "base"
+            gpu_core_map = {
+                ("m1", "base"): 8, ("m1", "pro"): 16, ("m1", "max"): 32, ("m1", "ultra"): 64,
+                ("m2", "base"): 10, ("m2", "pro"): 19, ("m2", "max"): 38, ("m2", "ultra"): 76,
+                ("m3", "base"): 10, ("m3", "pro"): 18, ("m3", "max"): 40, ("m3", "ultra"): 76,
+                ("m4", "base"): 10, ("m4", "pro"): 20, ("m4", "max"): 40, ("m4", "ultra"): 80,
+            }
+            info["gpu_cores"] = gpu_core_map.get((gen, tier), info["gpu_cores"])
 
     return info
 
@@ -136,15 +172,33 @@ def get_peak_flops(hw_info=None):
         hw_info = get_hardware_info()
 
     chip = hw_info["chip_name"].lower()
-    gpu_cores = hw_info["gpu_cores"]
 
-    # Rough bf16 TFLOPS estimates per GPU core (varies by generation)
-    # M3/M4 cores are ~30% faster than M1/M2 cores
+    # NVIDIA GPU FLOPS lookup (bf16 dense, not sparse)
+    nvidia_flops = {
+        "h100": 756e12,
+        "h200": 756e12,
+        "h800": 756e12,
+        "a100": 312e12,
+        "l40s": 362e12,
+        "l40": 181e12,
+        "rtx 6000 ada": 363e12,
+        "rtx 4000 ada": 105e12,
+        "rtx 4090": 330e12,
+        "rtx 4080": 194e12,
+        "rtx 3090": 142e12,
+    }
+
+    for key, flops in nvidia_flops.items():
+        if key in chip:
+            return flops
+
+    # Fall back to Apple Silicon estimate
+    gpu_cores = hw_info["gpu_cores"]
     m = re.search(r"(m[1-5])", chip)
     gen = m.group(1) if m else "m4"
 
     flops_per_core = {
-        "m1": 0.5e12,   # ~0.5 TFLOPS/core bf16
+        "m1": 0.5e12,
         "m2": 0.55e12,
         "m3": 0.65e12,
         "m4": 0.7e12,
@@ -164,41 +218,56 @@ def suggest_hyperparameters(hw_info=None):
     mem_gb = hw_info["memory_gb"]
     tier = hw_info["chip_tier"]
 
-    # Defaults validated by characterization sessions:
-    #   M1 Max 64GB (mar11):     batch=16K, dev=8,  depth=8  → val_bpb=1.621
-    #   M4 Pro 24GB (mar14):     batch=8K,  dev=8,  depth=6  → val_bpb=1.429
-    #   M5 Max 64GB (mar14-m5):  batch=32K, dev=16, depth=8  → val_bpb=1.320
-    #
-    # Key finding: larger batches cause memory-pressure swapping even on 64GB.
-    # More gradient steps (smaller batches) consistently beats model capacity.
-
-    if tier == "ultra" or mem_gb >= 128:
+    # NVIDIA GPU tiers
+    if tier == "datacenter":
+        return {
+            "depth": 12,
+            "device_batch_size": 64,
+            "total_batch_size": 2**17,  # 128K tokens
+            "eval_tokens_multiplier": 10,
+        }
+    elif tier == "professional":
         return {
             "depth": 10,
             "device_batch_size": 32,
             "total_batch_size": 2**16,  # 64K tokens
             "eval_tokens_multiplier": 10,
         }
-    elif tier == "max" or mem_gb >= 48:
+    elif tier == "consumer":
         return {
             "depth": 8,
             "device_batch_size": 16,
             "total_batch_size": 2**15,  # 32K tokens
             "eval_tokens_multiplier": 10,
         }
+
+    # Apple Silicon tiers
+    if tier == "ultra" or mem_gb >= 128:
+        return {
+            "depth": 10,
+            "device_batch_size": 32,
+            "total_batch_size": 2**16,
+            "eval_tokens_multiplier": 10,
+        }
+    elif tier == "max" or mem_gb >= 48:
+        return {
+            "depth": 8,
+            "device_batch_size": 16,
+            "total_batch_size": 2**15,
+            "eval_tokens_multiplier": 10,
+        }
     elif tier == "pro" or mem_gb >= 18:
         return {
             "depth": 6,
             "device_batch_size": 8,
-            "total_batch_size": 2**13,  # 8K tokens
+            "total_batch_size": 2**13,
             "eval_tokens_multiplier": 5,
         }
     else:
-        # Base M-series or low memory
         return {
             "depth": 4,
             "device_batch_size": 4,
-            "total_batch_size": 2**12,  # 4K tokens
+            "total_batch_size": 2**12,
             "eval_tokens_multiplier": 3,
         }
 
@@ -211,7 +280,6 @@ def sync_device(device_type):
     elif device_type == "mps":
         import torch
         torch.mps.synchronize()
-    # MLX: no explicit sync needed (mx.eval() handles it)
 
 
 def get_peak_memory_mb(device_type):
@@ -241,9 +309,9 @@ def print_hardware_summary():
     peak_flops = get_peak_flops(hw)
 
     print(f"Hardware: {hw['chip_name']}")
-    print(f"  Memory: {hw['memory_gb']:.0f} GB unified")
-    print(f"  GPU cores: {hw['gpu_cores']} (estimated)")
-    print(f"  Chip tier: {hw['chip_tier']}")
+    print(f"  Memory: {hw['memory_gb']:.0f} GB")
+    print(f"  GPU cores/SMs: {hw['gpu_cores']}")
+    print(f"  Tier: {hw['chip_tier']}")
     print(f"  Peak bf16 FLOPS: {peak_flops:.2e}")
     print(f"Suggested config:")
     print(f"  Depth: {hp['depth']}")
