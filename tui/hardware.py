@@ -1,22 +1,37 @@
-"""Apple Silicon hardware info for TUI display."""
+"""Hardware info for TUI display — supports both Apple Silicon and NVIDIA GPUs."""
 
+import platform
 import subprocess
 import re
 
 
-def get_hardware_summary() -> dict:
-    """Get hardware info without importing ML frameworks.
+def _get_nvidia_info() -> dict | None:
+    """Try to get NVIDIA GPU info via backends module (uses torch.cuda)."""
+    try:
+        from backends import get_hardware_info, get_peak_flops
+        hw = get_hardware_info()
+        if hw.get("chip_name", "unknown") != "unknown":
+            peak_flops = get_peak_flops(hw)
+            return {
+                'chip_name': hw['chip_name'],
+                'gpu_cores': hw['gpu_cores'],
+                'memory_gb': hw['memory_gb'],
+                'peak_tflops': peak_flops / 1e12,
+            }
+    except Exception:
+        pass
+    return None
 
-    Returns dict with: chip_name, gpu_cores, total_memory_gb, peak_tflops
-    """
+
+def _get_apple_silicon_info() -> dict:
+    """Get Apple Silicon hardware info via sysctl."""
     info = {
         'chip_name': 'Unknown',
         'gpu_cores': 0,
-        'total_memory_gb': 0,
+        'memory_gb': 0,
         'peak_tflops': 0.0,
     }
 
-    # Get chip name
     try:
         result = subprocess.run(
             ['/usr/sbin/sysctl', '-n', 'machdep.cpu.brand_string'],
@@ -26,17 +41,15 @@ def get_hardware_summary() -> dict:
     except Exception:
         pass
 
-    # Get total memory
     try:
         result = subprocess.run(
             ['/usr/sbin/sysctl', '-n', 'hw.memsize'],
             capture_output=True, text=True, timeout=5,
         )
-        info['total_memory_gb'] = int(result.stdout.strip()) / (1024 ** 3)
+        info['memory_gb'] = int(result.stdout.strip()) / (1024 ** 3)
     except Exception:
         pass
 
-    # Get GPU cores
     try:
         result = subprocess.run(
             ['/usr/sbin/sysctl', '-n', 'hw.perflevel0.gpucount'],
@@ -44,7 +57,6 @@ def get_hardware_summary() -> dict:
         )
         info['gpu_cores'] = int(result.stdout.strip())
     except Exception:
-        # Fallback: try to infer from chip name
         chip = info['chip_name'].lower()
         gpu_core_map = {
             ("m1", "base"): 8, ("m1", "pro"): 16, ("m1", "max"): 32, ("m1", "ultra"): 64,
@@ -59,7 +71,6 @@ def get_hardware_summary() -> dict:
             tier = "ultra" if "ultra" in chip else "max" if "max" in chip else "pro" if "pro" in chip else "base"
             info['gpu_cores'] = gpu_core_map.get((gen, tier), 0)
 
-    # Estimate peak TFLOPS
     chip = info['chip_name'].lower()
     flops_per_core = {
         "m1": 0.5e12, "m2": 0.55e12, "m3": 0.65e12,
@@ -72,3 +83,25 @@ def get_hardware_summary() -> dict:
         info['peak_tflops'] = info['gpu_cores'] * fpc / 1e12
 
     return info
+
+
+def get_hardware_summary() -> dict:
+    """Get hardware info for the current platform.
+
+    Returns dict with: chip_name, gpu_cores, memory_gb, peak_tflops
+    """
+    # Try NVIDIA first (works on Linux GPU droplets)
+    nvidia = _get_nvidia_info()
+    if nvidia:
+        return nvidia
+
+    # Fall back to Apple Silicon
+    if platform.system() == "Darwin":
+        return _get_apple_silicon_info()
+
+    return {
+        'chip_name': 'Unknown',
+        'gpu_cores': 0,
+        'memory_gb': 0,
+        'peak_tflops': 0.0,
+    }

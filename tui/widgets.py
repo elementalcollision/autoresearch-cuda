@@ -153,7 +153,7 @@ class HardwarePanel(Static):
 
     def _refresh_content(self) -> None:
         hw = self._hw
-        total_gb = hw.get('total_memory_gb', 0)
+        total_gb = hw.get('memory_gb', 0)
 
         # Use live reading if available, otherwise peak from final output
         display_mb = self._live_mb if self._live_mb > 0 else self._peak_mb

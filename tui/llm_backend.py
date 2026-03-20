@@ -22,7 +22,7 @@ class ExperimentProposal:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are an autonomous AI researcher optimizing a small language model on Apple Silicon.
+You are an autonomous AI researcher optimizing a small language model on NVIDIA GPUs with CUDA.
 
 You modify the hyperparameter block of a training script to minimize val_bpb (validation bits per byte — lower is better). Each experiment runs for a fixed 5-minute time budget.
 
@@ -34,6 +34,7 @@ Rules:
 - Consider the full results history — don't repeat failed experiments.
 - If many experiments have been discarded, try a different direction entirely.
 - The key insight from prior characterization: maximizing gradient steps within the fixed time budget is the dominant factor. Smaller batches = more steps = usually better, up to a point.
+- CUDA-specific: torch.compile fuses kernels, FlashAttention-2 is active via SDPA, bf16 autocast is on. VRAM is the hard constraint — OOM means the batch/model is too large.
 
 Respond in EXACTLY this format (no markdown fences around the whole response):
 
@@ -44,7 +45,7 @@ CODE:
 """
 
 USER_PROMPT_TEMPLATE = """\
-Here is the current hyperparameter block of train_mlx.py:
+Here is the current hyperparameter block of the training script:
 
 ```python
 {current_code}
@@ -54,7 +55,7 @@ Here is the experiment history so far:
 
 {results_history}
 
-Hardware: {chip_name}, {memory_gb:.0f} GB unified memory, {gpu_cores} GPU cores, ~{peak_tflops:.1f} TFLOPS bf16
+Hardware: {chip_name}, {memory_gb:.0f} GB VRAM, {gpu_cores} SMs, ~{peak_tflops:.1f} TFLOPS bf16
 
 Current best val_bpb: {best_val_bpb:.6f} (from {best_experiment})
 
@@ -183,7 +184,7 @@ class ClaudeBackend(LLMBackend):
             current_code=current_code,
             results_history=results_history if results_history else "No experiments yet — this will be the first modification after baseline.",
             chip_name=hw_info.get("chip_name", "Unknown"),
-            memory_gb=hw_info.get("total_memory_gb", 0),
+            memory_gb=hw_info.get("memory_gb", 0),
             gpu_cores=hw_info.get("gpu_cores", 0),
             peak_tflops=hw_info.get("peak_tflops", 0),
             best_val_bpb=best_val_bpb,
