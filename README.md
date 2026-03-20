@@ -1,79 +1,90 @@
-# autoresearch-MLX/MPS
+# autoresearch-CUDA
 
-Apple Silicon dual-backend port of [karpathy/autoresearch](https://github.com/karpathy/autoresearch) with full Muon optimizer support on both PyTorch MPS and MLX.
+NVIDIA GPU optimized fork of [karpathy/autoresearch](https://github.com/karpathy/autoresearch) with full `torch.compile`, FlashAttention-2, and Muon optimizer support on CUDA. Designed for rapid iteration on DigitalOcean GPU droplets.
 
-![Experiment Results: M1 Max vs M4 Pro vs M5 Max](experiment_results.png)
-
-> **Latest results**: See the [experiment wiki](https://github.com/elementalcollision/autoresearch/wiki) for full details per chip.
+> **Latest results**: See the [experiment wiki](https://github.com/elementalcollision/autoresearch-cuda/wiki) for full details per GPU and dataset.
 >
-> | Chip | Dataset | Date | Best val_bpb | Improvement |
-> |------|---------|------|-------------|-------------|
-> | **M5 Max** (64 GB) | [FineWeb-Edu](https://github.com/elementalcollision/autoresearch/wiki/FineWeb-Edu-Agent-Run-Mar-17-2026) | Mar 17 | **1.295** | −8.1% (101 experiments) |
-> | **M5 Max** (64 GB) | [Climbmix](https://github.com/elementalcollision/autoresearch/wiki/Agent-Run-Mar-16-2026) | Mar 16 | **1.335** | −1.3% (81 experiments) |
-> | **M5 Max** (64 GB) | [Climbmix](https://github.com/elementalcollision/autoresearch/wiki/Experiment-Results-Mar-15-2026-M5-Max) | Mar 15 | **1.320** | −36.4% (17 experiments) |
-> | M4 Pro (24 GB) | [Climbmix](https://github.com/elementalcollision/autoresearch/wiki/Experiment-Results-Mar-14-2026-M4-Pro) | Mar 14 | 1.429 | −29.5% |
-> | M1 Max (64 GB) | [Climbmix](https://github.com/elementalcollision/autoresearch/wiki/Experiment-Results-Mar-11-2026) | Mar 11 | 1.621 | −22.6% |
+> | GPU | Dataset | Best val_bpb | tok/sec | MFU | Experiments |
+> |-----|---------|-------------|---------|-----|-------------|
+> | **RTX 4000 Ada** (20 GB) | [Climbmix](https://github.com/elementalcollision/autoresearch-cuda/wiki) | **1.230** | 67,709 | 26.7% | 3 (in progress) |
 >
-> **Cross-dataset finding**: Optimal hyperparameters are dataset-dependent. FineWeb-Edu converges to a half-width model (AR=32) running 2× more gradient steps, while climbmix keeps the full architecture. See the [Cross-Dataset Comparison](https://github.com/elementalcollision/autoresearch/wiki/Cross-Dataset-Comparison) for full analysis.
+> **Cross-platform comparison**: The RTX 4000 Ada ($0.76/hr) achieves 67K tok/sec vs 58K on the M5 Max — with `torch.compile` and FlashAttention-2 providing the performance advantage despite being a lower-tier GPU. See the [Apple Silicon fork](https://github.com/elementalcollision/autoresearch/wiki) for Metal/MLX baselines.
 
 ## What is this?
 
-[Autoresearch](https://github.com/karpathy/autoresearch) is Karpathy's framework for autonomous AI-driven LLM training experiments. An AI agent modifies the training code, runs a 5-minute experiment, checks if results improved, keeps or discards, and repeats overnight.
+[Autoresearch](https://github.com/karpathy/autoresearch) is Karpathy's framework for autonomous AI-driven LLM training experiments. An AI agent modifies the training code, runs a 5-minute experiment, checks if results improved, keeps or discards, and repeats.
 
-The original requires an NVIDIA GPU (H100) with CUDA, FlashAttention-3, and `torch.compile`. This fork ports everything to Apple Silicon, supporting both **PyTorch MPS** and **MLX** backends. It runs on any Apple Silicon Mac from M1 to M5 Ultra — tested on M1 Max (64 GB), M4 Pro (24 GB), and M5 Max (64 GB), with the M5 Max achieving the best results thanks to its superior compute throughput and GPU Neural Accelerators.
+This fork targets **NVIDIA CUDA GPUs** — from consumer RTX cards to datacenter H100s. It leverages `torch.compile` for kernel fusion, FlashAttention-2 via PyTorch SDPA, and bf16 tensor cores for maximum throughput. It also includes a complete DigitalOcean GPU integration for provisioning, deploying, monitoring, and collecting results from cloud GPU instances.
 
 ### Key features
 
-- **Dual backend**: PyTorch MPS and Apple MLX, auto-detected or manually selected
-- **Full Muon optimizer on both backends**: Newton-Schulz (Polar Express) orthogonalization, Nesterov momentum, NorMuon variance reduction, cautious weight decay. The MLX port is a novel implementation that doesn't exist in any public fork.
-- **Hardware auto-detection**: Identifies chip generation (M1-M5), tier (base/Pro/Max/Ultra), GPU core count, and memory. Scales hyperparameters accordingly.
-- **Hardware-adaptive defaults**: Batch size, model depth, and total batch size tuned per chip tier
-- **No CUDA dependencies**: Pure Apple Silicon. FlashAttention-3 replaced with PyTorch SDPA (MPS) and native attention (MLX).
+- **`torch.compile`**: Full model compilation with `mode="reduce-overhead"` for CUDA graph capture — the single biggest performance advantage over eager mode
+- **FlashAttention-2**: Automatic dispatch via `F.scaled_dot_product_attention` on CUDA
+- **Full Muon optimizer**: Newton-Schulz orthogonalization with `@torch.compile` for kernel fusion, bf16 tensor cores, CUDA-optimized scalar placement
+- **Hardware auto-detection**: Identifies GPU tier (consumer/professional/datacenter), VRAM, SM count, and peak FLOPS. Scales hyperparameters accordingly.
+- **DigitalOcean GPU integration**: One-command provisioning, deployment, monitoring, and teardown of cloud GPU instances
+- **Headless orchestrator**: AI-driven experiment loop via Claude Sonnet API, runs unattended on remote GPU droplets
 
 ## Quick start
 
-**Requirements**: Apple Silicon Mac (M1 or later), Python 3.10+, [uv](https://docs.astral.sh/uv/)
+### Local (NVIDIA GPU)
+
+**Requirements**: NVIDIA GPU with CUDA support, Python 3.10+, [uv](https://docs.astral.sh/uv/)
 
 ```bash
-# 1. Install uv (if needed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# 1. Clone and install
+git clone https://github.com/elementalcollision/autoresearch-cuda.git
+cd autoresearch-cuda
+uv sync --extra cuda
 
-# 2. Clone the repo
-git clone https://github.com/elementalcollision/autoresearch.git
-cd autoresearch
-
-# 3. Install dependencies (pick your backend)
-uv sync --extra mlx            # MLX only (recommended)
-uv sync --extra mps            # PyTorch MPS only
-uv sync --extra all            # Both backends
-
-# 4. Download data and train tokenizer (one-time, ~2 min)
+# 2. Download data and train tokenizer (~2 min)
 uv run prepare.py
 
-# 5. Run a training experiment (~5 min)
-uv run train_mlx.py            # MLX (recommended)
-uv run train.py                # Auto-detect backend
+# 3. Run a training experiment (~5 min)
+uv run train_cuda.py
+```
+
+### DigitalOcean GPU droplet
+
+```bash
+# 1. Provision a GPU droplet (RTX 4000 Ada — $0.76/hr)
+./gpu_provision.sh gpu-rtx4000-ada-1x nyc2
+
+# 2. Bootstrap the droplet (install deps, clone repo, download data)
+./setup_cuda.sh <droplet-ip>
+
+# 3. Push latest code
+./cuda_push.sh <droplet-ip>
+
+# 4. Launch AI experiment loop (runs unattended)
+./cuda_experiment.sh <droplet-ip> climbmix 100 mar20
+
+# 5. Monitor progress
+./cuda_monitor.sh <droplet-ip> climbmix --watch
+
+# 6. Collect results when done
+./cuda_collect.sh <droplet-ip> climbmix
+
+# 7. Destroy droplet
+./gpu_destroy.sh <droplet-name>
 ```
 
 ## Backend selection
 
-The system auto-detects the best backend (prefers MLX). Override with an environment variable:
+The system auto-detects CUDA when available. Override with an environment variable:
 
 ```bash
-# Auto-detect (default: prefers MLX)
+# Auto-detect (prefers CUDA)
 uv run train.py
 
-# Force MLX
-AUTORESEARCH_BACKEND=mlx uv run train.py
+# Force CUDA
+AUTORESEARCH_BACKEND=cuda uv run train.py
 
-# Force MPS
-AUTORESEARCH_BACKEND=mps uv run train.py
-
-# Run MLX directly
-uv run train_mlx.py
+# Run CUDA training directly
+uv run train_cuda.py
 ```
 
-Check your detected hardware and suggested config:
+Check detected hardware and suggested config:
 
 ```bash
 uv run -c "from backends import print_hardware_summary; print_hardware_summary()"
@@ -84,113 +95,99 @@ uv run -c "from backends import print_hardware_summary; print_hardware_summary()
 A real-time terminal dashboard with autonomous LLM-driven experiment optimization.
 
 ```bash
-uv sync --extra all                              # Install all dependencies
+uv sync --extra all
 
-uv run dashboard.py                              # Single training run with live metrics
-uv run dashboard.py --agent --tag my-run         # Autonomous experiment loop (requires API key)
-uv run dashboard.py --agent --tag my-run --max 50 # Limit to 50 experiments
+uv run dashboard.py                                # Single training run with live metrics
+uv run dashboard.py --agent --tag my-run           # Autonomous experiment loop
+uv run dashboard.py --agent --tag my-run --max 50  # Limit to 50 experiments
+uv run dashboard.py --watch                        # Watch mode (monitor results.tsv)
 ```
 
-Agent mode requires an Anthropic API key — run `uv run dashboard.py --setup-key` for one-time setup via macOS Keychain.
+Agent mode requires an Anthropic API key — run `uv run dashboard.py --setup-key` for one-time setup.
 
-See the [TUI Dashboard](https://github.com/elementalcollision/autoresearch/wiki/TUI-Dashboard) wiki page for panels, keybindings, credentials, agent mode details, and troubleshooting.
+### Headless mode (remote GPU)
 
-## Multi-Dataset Experiments
-
-Run experiments across different training datasets to compare how optimal hyperparameters vary by data distribution.
+For unattended operation on cloud GPU instances without a terminal UI:
 
 ```bash
-uv run convert_dataset.py fineweb-edu            # Download + convert a dataset
-uv run run_suite.py                              # Run the full multi-dataset sweep
-uv run compare_datasets.py                       # Cross-dataset analysis + charts
+uv run -m tui.headless --max 100 --tag mar20
+```
+
+This is what `cuda_experiment.sh` launches on the droplet via `nohup`.
+
+## Hardware recommendations
+
+### Auto-detected defaults
+
+| GPU tier | VRAM | Model depth | Device batch | Total batch |
+|----------|------|-------------|-------------|-------------|
+| Consumer (RTX 4060-4090) | 8-24 GB | 8 | 16 | 32K tokens |
+| Professional (RTX 4000/6000 Ada, L40S) | 20-48 GB | 10 | 32 | 64K tokens |
+| Datacenter (H100, H200) | 80+ GB | 12 | 64 | 128K tokens |
+
+### DigitalOcean GPU options
+
+| Droplet type | GPU | VRAM | Cost | Use case |
+|-------------|-----|------|------|----------|
+| `gpu-rtx4000-ada-1x` | RTX 4000 Ada | 20 GB | $0.76/hr | Development, single-dataset runs |
+| `gpu-h100x1-base` | H100 SXM | 80 GB | $3.39/hr | Full-suite multi-dataset sweeps |
+
+## Multi-dataset experiments
+
+Run experiments across different training datasets:
+
+```bash
+uv run convert_dataset.py fineweb-edu     # Download + convert a dataset
+uv run run_suite.py                       # Full multi-dataset sweep
+uv run compare_datasets.py                # Cross-dataset analysis + charts
 ```
 
 **Available datasets**: climbmix (default), fineweb-edu, fineweb-edu-high, cosmopedia-v2, slimpajama, python-edu.
 
-See the [Multi-Dataset Experiments](https://github.com/elementalcollision/autoresearch/wiki/Multi-Dataset-Experiments) wiki page for architecture, usage, and the [Cross-Dataset Comparison](https://github.com/elementalcollision/autoresearch/wiki/Cross-Dataset-Comparison) for analysis of how optimal configurations diverge across datasets.
+For remote multi-dataset sweeps:
+
+```bash
+./cuda_suite.sh <droplet-ip> 100 120      # All datasets, 100 experiments each, 120min timeout
+```
 
 ## Project structure
 
 ```
+train_cuda.py           CUDA training script (agent modifies this)
+train.py                Backend dispatch (auto-detects CUDA/MPS/MLX)
+prepare.py              Data prep, tokenizer, dataloader, evaluation (do not modify)
 dashboard.py            TUI dashboard entry point
+program.md              Agent instructions for autonomous experiments
 run_suite.py            Multi-dataset experiment orchestrator
 compare_datasets.py     Cross-dataset analysis and visualization
+compare_backends.py     Cross-platform CUDA vs Apple Silicon comparison
 convert_dataset.py      Download and convert alternative datasets
-prepare.py              Data prep, tokenizer, dataloader, evaluation (do not modify)
-train.py                MPS training script + backend dispatch (agent modifies this)
-train_mlx.py            MLX training script (agent modifies this)
-program.md              Agent instructions for autonomous experiments
+monitor.py              CLI experiment results monitor
 backends/
-  __init__.py           Hardware detection, chip tier, hyperparameter suggestions
+  __init__.py           Hardware detection, GPU tier, FLOPS lookup, hyperparameter suggestions
+  muon_cuda.py          Muon+AdamW optimizer for CUDA (torch.compile, bf16 tensor cores)
   muon_mps.py           Muon+AdamW optimizer for PyTorch MPS
-  muon_mlx.py           Muon+AdamW optimizer for MLX (novel port)
+  muon_mlx.py           Muon+AdamW optimizer for MLX
 tui/
   app.py                Textual Application, layout, subprocess management
-  widgets.py            TrainingPanel, HardwarePanel, ExperimentsTable, ExperimentStatusPanel, ActivityLog
-  orchestrator.py       Autonomous experiment loop (LLM → modify → train → evaluate → keep/discard)
-  llm_backend.py        LLM abstraction: Claude API (Option A) + Ollama placeholder (Option B)
-  credentials.py        API key resolution: env var → macOS Keychain → Claude Code credentials
+  headless.py           Headless orchestrator for remote/unattended operation
+  widgets.py            TrainingPanel, HardwarePanel, ExperimentsTable, ActivityLog
+  orchestrator.py       Autonomous experiment loop (LLM → modify → train → evaluate)
+  llm_backend.py        Claude Sonnet API integration for experiment generation
+  credentials.py        API key resolution: env var → macOS Keychain → Claude Code creds
   git_manager.py        Git operations: branch, commit, revert
-  results.py            results.tsv read/write/history formatting for LLM prompts
-  parser.py             Regex parser for training stdout (\r-delimited output)
-  hardware.py           Apple Silicon hardware detection (chip, cores, memory, TFLOPS)
+  results.py            results.tsv read/write/history formatting
+  parser.py             Regex parser for training stdout
+  hardware.py           GPU hardware detection (NVIDIA + Apple Silicon fallback)
   experiments.py        results.tsv loader for TUI table display
   styles.tcss           CSS layout for panel styling
-docs/
-  evaluating-results.md Guide for noise floor estimation and Pareto efficiency
 results/
   <dataset>/results.tsv Per-dataset experiment results
-pyproject.toml          Dependencies with optional groups (mlx, mps, tui, agent, all)
 ```
 
-**What the agent edits**: `train.py` (MPS) or `train_mlx.py` (MLX). Everything is fair game: architecture, optimizer settings, hyperparameters, batch size, model depth.
+**What the agent edits**: `train_cuda.py`. Everything is fair game: architecture, optimizer settings, hyperparameters, batch size, model depth.
 
 **What is fixed**: `prepare.py` (evaluation, data loading, constants), `backends/` (optimizer, hardware detection).
-
-## Running autonomous experiments
-
-Point your AI agent (Claude, Codex, etc.) at this repo and prompt:
-
-```
-Hi, have a look at program.md and let's kick off a new experiment! Let's do the setup first.
-```
-
-The agent reads `program.md`, establishes a baseline, then enters an autonomous loop: modify code, train 5 minutes, compare results, keep or discard, repeat. See `program.md` for full details.
-
-## Hardware recommendations
-
-### Auto-detected defaults (validated by characterization)
-
-| Chip tier | Memory | Model depth | Device batch | Total batch |
-|-----------|--------|-------------|-------------|-------------|
-| Base (M1-M5) | 8-16 GB | 4 | 4 | 4K tokens |
-| Pro | 18-36 GB | 6 | 8 | 8K tokens |
-| Max | 36-128 GB | 8 | 16 | 32K tokens |
-| Ultra | 64-192 GB | 10 | 32 | 64K tokens |
-
-These defaults are calibrated from real characterization sessions across three chips. Larger batches cause memory-pressure swapping even on 64 GB machines — more gradient steps (smaller batches) consistently beats model capacity within the fixed 5-minute budget.
-
-### Optimized results (after autonomous tuning)
-
-| Chip | Memory | Best val_bpb | Optimized batch | Peak mem | Steps |
-|------|--------|-------------|----------------|----------|-------|
-| **M5 Max** | 64 GB | **1.320** | 32K total, 16 device | 26.1 GB | 312 |
-| M4 Pro | 24 GB | 1.429 | 8K total, 4 device | 4.5 GB | 751 |
-| M1 Max | 64 GB | 1.621 | 16K total, 8 device | 11.3 GB | ~210 |
-
-**Key insight**: Maximizing optimizer steps within the fixed 5-minute time budget is the dominant factor across all chips. Each generation finds its own optimal batch size — M5 Max at 32K, M4 Pro at 8K, M1 Max at 16K — balancing gradient quality against step throughput.
-
-## Differences from the original
-
-| Feature | Original (CUDA) | This fork (Apple Silicon) |
-|---------|-----------------|---------------------------|
-| Attention | FlashAttention-3 | PyTorch SDPA (MPS) / native (MLX) |
-| Compilation | `torch.compile` | Eager mode (MPS) / `mx.compile` (MLX) |
-| Memory model | Discrete GPU VRAM | Unified CPU/GPU memory |
-| MFU metric | Exact (known H100 FLOPS) | Approximate (estimated per-chip FLOPS) |
-| Optimizer | Muon+AdamW (CUDA) | Muon+AdamW on both backends |
-| Backends | Single (CUDA) | Dual (MPS + MLX) |
-| Precision | bf16 via autocast | bf16 with manual casting (MPS) / native (MLX) |
 
 ## Output format
 
@@ -198,51 +195,63 @@ After a 5-minute run, the script prints:
 
 ```
 ---
-val_bpb:          1.319639
-training_seconds: 300.7
-total_seconds:    398.4
-peak_vram_mb:     26742.3
-mfu_percent:      23.35
-total_tokens_M:   10.2
-num_steps:        312
-num_params_M:     50.3
-depth:            8
-backend:          mlx
-chip:             Apple M5 Max
+val_bpb:          1.238870
+training_seconds: 300.2
+total_seconds:    367.8
+peak_vram_mb:     15872.0
+mfu_percent:      26.70
+total_tokens_M:   20.3
+num_steps:        620
+num_params_M:     67.1
+depth:            10
+backend:          cuda
+chip:             NVIDIA RTX 4000 Ada Generation
 ```
 
-The key metric is **val_bpb** (validation bits per byte) — lower is better. The example above is an actual run from the M5 Max optimized configuration.
+The key metric is **val_bpb** (validation bits per byte) — lower is better.
 
 ## Technical notes
 
-### MPS backend
-- No `torch.compile` (not supported on MPS)
-- All optimizer arithmetic done in float32 to avoid MPS mixed-dtype crashes
-- Nesterov momentum uses explicit `mul_/add_` instead of `lerp_` (MPS dtype issue)
-- Sliding window attention via manual mask + SDPA
-
-### MLX backend
-- Newton-Schulz orthogonalization uses `mx.swapaxes` for matrix transpose
-- Gradient accumulation via `tree_map`
-- Explicit `mx.eval()` calls for lazy evaluation control
-- `nn.value_and_grad()` replaces PyTorch's `.backward()`
-- Aggressive GC management (`gc.freeze()` after warmup) to minimize overhead
+### CUDA backend
+- `torch.compile(mode="reduce-overhead")` for CUDA graph capture and kernel fusion
+- FlashAttention-2 via `F.scaled_dot_product_attention` (auto-dispatched on CUDA)
+- bf16 autocast via `torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)`
+- Muon optimizer compiled with `@torch.compile` for fused Newton-Schulz iterations
+- `torch.cuda.empty_cache()` for explicit VRAM management
 
 ### Muon optimizer
-The Muon optimizer combines Newton-Schulz orthogonalization (Polar Express) with Nesterov momentum, NorMuon variance reduction, and cautious weight decay. It is applied to 2D matrix parameters in transformer blocks, while embeddings and scalars use standard AdamW. The MLX implementation is a complete port of the original CUDA version, adapted for MLX's lazy evaluation model.
+The Muon optimizer combines Newton-Schulz orthogonalization (Polar Express) with Nesterov momentum, NorMuon variance reduction, and cautious weight decay. Applied to 2D matrix parameters in transformer blocks, while embeddings and scalars use standard AdamW. The CUDA version uses `@torch.compile` for kernel fusion and bf16 tensor cores for the Newton-Schulz iterations.
+
+### DigitalOcean GPU integration
+Scripts in the companion [DigitalOceanGPU](https://github.com/elementalcollision/autoresearch-cuda) repo handle the full lifecycle:
+
+| Script | Purpose |
+|--------|---------|
+| `gpu_provision.sh` | Create GPU droplet via DO API |
+| `setup_cuda.sh` | Bootstrap: install uv, clone repo, install deps, download data |
+| `cuda_push.sh` | Rapid code sync via rsync (~2 seconds) |
+| `cuda_experiment.sh` | Launch headless AI experiment loop via nohup |
+| `cuda_monitor.sh` | Remote monitoring (--once, --watch, --log, --sync) |
+| `cuda_collect.sh` | Pull results, configs, environment info |
+| `gpu_destroy.sh` | Tear down droplet |
+
+## Differences from the Apple Silicon fork
+
+| Feature | Apple Silicon fork | This fork (CUDA) |
+|---------|-------------------|-------------------|
+| Attention | PyTorch SDPA (MPS) / native (MLX) | FlashAttention-2 via SDPA |
+| Compilation | Eager mode (MPS) / `mx.compile` (MLX) | `torch.compile` with CUDA graphs |
+| Memory model | Unified CPU/GPU memory | Discrete GPU VRAM |
+| MFU metric | Approximate (estimated per-chip) | Precise (known GPU FLOPS) |
+| Deployment | Local Mac | Local or DigitalOcean GPU cloud |
+| Precision | bf16 manual casting (MPS) / native (MLX) | bf16 via autocast + tensor cores |
+| Target hardware | M1-M5 (8-192 GB unified) | RTX consumer to H100 datacenter |
 
 ## Acknowledgments
 
-- [Andrej Karpathy](https://github.com/karpathy/autoresearch) -- original autoresearch framework and design philosophy
-- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos) -- reference MPS port
-- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx) -- reference MLX port
-- [Jordan Keller](https://kellerjordan.github.io/posts/muon/) -- Muon optimizer
-
-## Upstream contributions
-
-- [PR #205](https://github.com/karpathy/autoresearch/pull/205) — Self-contained Apple Silicon MLX backend submitted to [karpathy/autoresearch](https://github.com/karpathy/autoresearch). GPU-accelerated Newton-Schulz with float32 NaN fix, MLX-native dataloader and evaluation. Zero modifications to existing files.
-- [PR #84](https://github.com/karpathy/autoresearch/pull/84) — Fix NaN loss not caught by fast-fail check *(merged)*
-- [PR #162](https://github.com/karpathy/autoresearch/pull/162) — Guard against infinite loop when no training shards exist *(merged)*
+- [Andrej Karpathy](https://github.com/karpathy/autoresearch) — original autoresearch framework
+- [elementalcollision/autoresearch](https://github.com/elementalcollision/autoresearch) — Apple Silicon fork with MLX/MPS backends
+- [Jordan Keller](https://kellerjordan.github.io/posts/muon/) — Muon optimizer
 
 ## License
 
