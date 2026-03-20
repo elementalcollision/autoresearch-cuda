@@ -527,3 +527,37 @@ print(f"num_params_M:     {num_params / 1e6:.1f}")
 print(f"depth:            {DEPTH}")
 print(f"backend:          cuda")
 print(f"chip:             {_hw_info['chip_name']}")
+
+# Write results to TSV (standalone mode — orchestrator handles this when running via run_suite.py)
+if os.environ.get("AUTORESEARCH_ORCHESTRATOR") != "1":
+    dataset_name = os.environ.get("AUTORESEARCH_DATASET", "climbmix")
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", dataset_name)
+    os.makedirs(results_dir, exist_ok=True)
+    results_tsv = os.path.join(results_dir, "results.tsv")
+    tok_sec = int(total_tokens / total_training_time) if total_training_time > 0 else 0
+
+    # Determine next experiment number
+    exp_num = 0
+    if os.path.exists(results_tsv):
+        with open(results_tsv) as f:
+            for line in f:
+                if line.startswith("exp"):
+                    try:
+                        n = int(line.split("\t")[0].replace("exp", ""))
+                        exp_num = max(exp_num, n + 1)
+                    except ValueError:
+                        pass
+
+    header = "exp\tdescription\tval_bpb\tpeak_mem_gb\ttok_sec\tmfu\tsteps\tstatus\tnotes\n"
+    if not os.path.exists(results_tsv):
+        with open(results_tsv, "w") as f:
+            f.write(header)
+
+    status = "baseline" if exp_num == 0 else "keep"
+    with open(results_tsv, "a") as f:
+        f.write(
+            f"exp{exp_num}\tstandalone run\t{val_bpb:.6f}\t{peak_vram_mb / 1024:.1f}\t"
+            f"{tok_sec}\t{steady_state_mfu:.1f}\t{step}\t{status}\t"
+            f"depth={DEPTH}, {_hw_info['chip_name']}\n"
+        )
+    print(f"results_tsv:      {results_tsv}")
