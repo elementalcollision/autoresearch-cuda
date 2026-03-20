@@ -413,6 +413,7 @@ class ExperimentOrchestrator:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["AUTORESEARCH_ORCHESTRATOR"] = "1"  # suppress standalone results writing in train_cuda.py
 
         try:
             with self._lock:
