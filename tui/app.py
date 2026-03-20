@@ -54,7 +54,7 @@ class DashboardApp(App):
 
     def __init__(
         self,
-        training_script: str = "train_mlx.py",
+        training_script: str = "train_cuda.py",
         mode: str = "single",
         max_experiments: int = 100,
         run_tag: str | None = None,

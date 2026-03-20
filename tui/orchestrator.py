@@ -28,7 +28,7 @@ from tui.results import (
 )
 
 
-# Marker comments that delimit the hyperparameter block in train_mlx.py
+# Marker comments that delimit the hyperparameter block in train_cuda.py
 HP_BLOCK_START = "# ---------------------------------------------------------------------------\n# Hyperparameters"
 HP_BLOCK_END = "# ---------------------------------------------------------------------------\n# Setup"
 
@@ -482,7 +482,7 @@ class ExperimentOrchestrator:
     # ------------------------------------------------------------------
 
     def _extract_hp_block(self) -> str:
-        """Extract the hyperparameter block from train_mlx.py."""
+        """Extract the hyperparameter block from train_cuda.py."""
         with open(self._training_script) as f:
             content = f.read()
 
@@ -495,7 +495,7 @@ class ExperimentOrchestrator:
         return content[start_idx:end_idx]
 
     def _apply_hp_block(self, new_block: str) -> None:
-        """Replace the hyperparameter block in train_mlx.py."""
+        """Replace the hyperparameter block in train_cuda.py."""
         with open(self._training_script) as f:
             content = f.read()
 

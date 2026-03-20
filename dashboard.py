@@ -80,7 +80,7 @@ def main():
     mode = "single"
     max_experiments = 100
     run_tag = None
-    training_script = "train_mlx.py"
+    training_script = "train_cuda.py"
 
     if "--watch" in args:
         mode = "watch"
