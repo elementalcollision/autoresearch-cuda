@@ -99,7 +99,7 @@ def _make_callbacks():
 
 
 def run_headless(
-    training_script: str = "train_mlx.py",
+    training_script: str = "train_cuda.py",
     results_path: str = "results.tsv",
     tag: str | None = None,
     max_experiments: int = 80,
@@ -149,7 +149,7 @@ def main():
     parser = argparse.ArgumentParser(description="Headless experiment runner (no TUI)")
     parser.add_argument("--tag", type=str, default=None, help="Run tag")
     parser.add_argument("--max", type=int, default=80, help="Max experiments")
-    parser.add_argument("--training-script", default="train_mlx.py", help="Training script path")
+    parser.add_argument("--training-script", default="train_cuda.py", help="Training script path")
     parser.add_argument("--results", default="results.tsv", help="Results TSV path")
     args = parser.parse_args()
 
