@@ -97,7 +97,7 @@ def get_hardware_info():
         if torch.cuda.is_available():
             props = torch.cuda.get_device_properties(0)
             info["chip_name"] = props.name
-            info["memory_gb"] = props.total_mem / (1024 ** 3)
+            info["memory_gb"] = props.total_memory / (1024 ** 3)
             info["gpu_cores"] = props.multi_processor_count
 
             # Classify tier based on GPU name
