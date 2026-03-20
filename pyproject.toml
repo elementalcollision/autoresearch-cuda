@@ -1,0 +1,38 @@
+[project]
+name = "autoresearch-arm"
+version = "0.1.0"
+description = "Apple Silicon dual-backend port of Karpathy's autoresearch"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "numpy>=2.2.6",
+    "pyarrow>=21.0.0",
+    "requests>=2.32.0",
+    "rustbpe>=0.1.0",
+    "tiktoken>=0.11.0",
+]
+
+[project.optional-dependencies]
+mps = [
+    "torch>=2.6.0",
+    "matplotlib>=3.10.8",
+    "pandas>=2.3.3",
+]
+mlx = [
+    "mlx>=0.30.0",
+]
+tui = [
+    "textual>=3.0.0",
+]
+agent = [
+    "textual>=3.0.0",
+    "anthropic>=0.40.0",
+]
+all = [
+    "torch>=2.6.0",
+    "mlx>=0.30.0",
+    "matplotlib>=3.10.8",
+    "pandas>=2.3.3",
+    "textual>=3.0.0",
+    "anthropic>=0.40.0",
+]

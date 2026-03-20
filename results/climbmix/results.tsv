@@ -1,0 +1,102 @@
+exp	description	val_bpb	peak_mem_gb	tok_sec	mfu	steps	status	notes
+exp0	baseline (no modifications)	1.296931	15.5	57942	17.9	530	baseline	depth=8, Apple M5 Max
+exp1	Decrease DEVICE_BATCH_SIZE from default to 4	1.310612	14.0	51299	15.8	469	discard	The baseline shows relatively low MFU (17.9%) and moderate token throughput. Red
+exp2	Increase MATRIX_LR from 0.0435 to 0.05	1.314750	15.5	50932	15.7	466	discard	The baseline achieved the best validation performance so far. Matrix learning ra
+exp3	Increase DEVICE_BATCH_SIZE from default to 8	1.313831	14.5	49617	15.3	455	discard	The baseline performed best so far, but exp1 showed that decreasing batch size h
+exp4	Decrease MATRIX_LR from 0.0435 to 0.035	1.312177	15.5	51896	16.0	476	discard	The previous experiment increasing MATRIX_LR to 0.05 performed worse than baseli
+exp5	Increase TOTAL_BATCH_SIZE to reduce gradient accumulation overhead and get more steps	1.347261	28.7	51930	15.7	238	discard	The baseline achieved the best val_bpb with 530 steps. Since smaller device batc
+exp6	Decrease TOTAL_BATCH_SIZE from default to enable more gradient accumulation steps	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp7	Decrease WEIGHT_DECAY from 0.2 to 0.1	1.304756	15.5	53262	16.4	487	discard	The baseline is still performing best, suggesting the current hyperparameters ma
+exp8	Increase WARMUP_RATIO from 0.0 to 0.1	1.321740	15.5	49600	15.2	454	discard	The baseline has no warmup which can lead to unstable early training and poor fi
+exp9	Decrease WARMDOWN_RATIO from 0.5 to 0.3	1.329900	15.5	45272	13.9	415	discard	The baseline is still performing best, suggesting we need to explore different d
+exp10	Increase EMBEDDING_LR from 0.4 to 0.5	1.327024	15.5	45621	14.0	419	discard	The embedding layer typically needs higher learning rates than other parameters 
+exp11	Decrease SCALAR_LR from 0.4 to 0.3	1.348416	15.5	39561	12.1	363	discard	The baseline is still the best performer, suggesting the current hyperparameters
+exp12	Decrease TOTAL_BATCH_SIZE from default to 256	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp13	Increase UNEMBEDDING_LR from 0.004 to 0.006	1.327862	15.5	46240	14.2	425	discard	The unembedding layer is crucial for final output predictions, and its learning 
+exp14	Decrease EMBEDDING_LR from 0.4 to 0.3	1.324724	15.5	45621	14.0	419	discard	The baseline remains the best performing configuration, suggesting the current h
+exp15	Decrease WEIGHT_DECAY from 0.2 to 0.05	1.315703	15.5	49300	15.2	452	discard	The baseline has the best val_bpb so far, and exp7 showed that reducing weight d
+exp16	Increase DEPTH from default to explore if a deeper model can improve performance	1.398254	25.0	25641	17.5	234	discard	All learning rate and regularization experiments have failed to beat baseline. S
+exp17	Increase DEVICE_BATCH_SIZE from default to 16	1.310664	15.5	50599	15.6	464	discard	The baseline achieved the best val_bpb so far, and all attempts to modify learni
+exp18	Decrease ADAM_BETAS from (0.8, 0.95) to (0.9, 0.95)	1.332448	15.5	46287	14.2	424	discard	The current beta1 of 0.8 is quite low and may be causing too aggressive momentum
+exp19	Increase ADAM_BETAS from (0.8, 0.95) to (0.7, 0.95)	1.326856	15.5	45227	13.8	414	discard	The baseline has the best performance so far, and exp18 showed that increasing t
+exp20	Decrease FINAL_LR_FRAC from 0.0 to 0.01	1.330777	15.5	43565	13.4	401	discard	The current setting forces learning rates to decay to exactly zero, which may be
+exp21	Increase ASPECT_RATIO from 32 to 64	1.445175	26.1	20265	17.7	187	discard	All learning rate, batch size, and optimizer experiments have performed worse th
+exp22	Decrease HEAD_DIM from 128 to 96	1.397411	18.3	29990	10.8	275	discard	Smaller head dimension reduces model parameters and memory usage, which could al
+exp23	Decrease HEAD_DIM from 128 to 64	1.419811	19.5	32890	10.0	301	discard	All previous experiments have performed worse than baseline. The failed HEAD_DIM
+exp24	Change WINDOW_PATTERN from "SSSL" to "SSL"	1.322457	15.5	47254	15.0	432	discard	The current best is still the baseline, and many hyperparameter tweaks have fail
+exp25	Increase HEAD_DIM from 128 to 160	1.337118	17.1	38231	16.2	350	discard	All previous experiments have either crashed or performed worse than baseline. S
+exp26	Change WINDOW_PATTERN from "SSSL" to "SSSS"	1.304786	15.5	53964	16.0	495	discard	All previous experiments have worsened performance compared to baseline. The WIN
+exp27	Decrease DEVICE_BATCH_SIZE from default to 2	1.302155	13.5	54963	17.0	504	discard	The baseline is still best at 1.2969 val_bpb. Looking at the pattern, smaller ba
+exp28	Decrease DEVICE_BATCH_SIZE from default to 1	1.303702	13.7	54297	16.8	498	discard	The trend shows that smaller device batch sizes have been improving performance 
+exp29	Increase MATRIX_LR from 0.0435 to 0.04	1.319088	15.5	49650	15.2	454	discard	The baseline achieved the best val_bpb so far, but several experiments with MATR
+exp30	Decrease MATRIX_LR from 0.0435 to 0.043	1.320437	15.5	46984	14.5	431	discard	The baseline remains the best performer, and we haven't explored small decreases
+exp31	Decrease MATRIX_LR from 0.0435 to 0.042	1.333554	15.5	43594	13.3	399	discard	The baseline remains the best result after 30 experiments. Recent experiments (e
+exp32	Decrease MATRIX_LR from 0.0435 to 0.044	1.331257	15.5	43579	13.4	401	discard	The baseline remains the best performer at 1.2969 val_bpb. Previous experiments 
+exp33	Increase MATRIX_LR from 0.0435 to 0.045	1.325243	15.5	45545	14.0	419	discard	The baseline remains the best result, and recent experiments around the current 
+exp34	Increase DEVICE_BATCH_SIZE from default to 12	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp35	Decrease DEVICE_BATCH_SIZE from default to 3	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp36	Change WINDOW_PATTERN from "SSSL" to "SSLL"	1.322997	15.5	46953	15.5	430	discard	The baseline "SSSL" pattern is still best, but I haven't tried "SSLL" which has 
+exp37	Increase DEVICE_BATCH_SIZE from default to 10	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp38	Decrease MATRIX_LR from 0.0435 to 0.041	1.318447	15.5	48902	15.0	448	discard	The baseline remains the best performer at 1.2969 val_bpb. Previous experiments 
+exp39	Decrease MATRIX_LR from 0.0435 to 0.040	1.320825	15.5	47888	14.7	438	discard	The learning rate sweep around 0.0435 shows a clear pattern: smaller values (0.0
+exp40	Decrease MATRIX_LR from 0.0435 to 0.046	1.325889	15.5	45938	14.1	420	discard	The baseline remains the best performer at 1.2969 val_bpb. I've extensively expl
+exp41	Increase DEVICE_BATCH_SIZE from default to 6	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp42	Increase DEVICE_BATCH_SIZE from default to 7	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp43	Decrease MATRIX_LR from 0.0435 to 0.038	1.318917	15.5	48885	15.1	449	discard	The baseline remains the best performer at 1.2969 val_bpb. Recent experiments (e
+exp44	Decrease MATRIX_LR from 0.0435 to 0.037	1.331979	15.5	43897	13.5	403	discard	The pattern shows that decreasing MATRIX_LR has been getting closer to the basel
+exp45	Add MLP_RATIO = 3.0 to reduce model parameters and potentially improve optimization efficiency	1.328115	15.5	44910	13.8	412	discard	The MLP ratio controls the expansion factor in the feed-forward layers, directly
+exp46	Decrease MATRIX_LR from 0.0435 to 0.039	1.334939	15.5	42581	13.1	391	discard	The baseline remains the best result after 45 experiments. Recent fine-tuning ar
+exp47	Increase DEVICE_BATCH_SIZE from default to 5	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp48	Decrease ASPECT_RATIO from 32 to 16	1.336346	10.3	86942	10.4	797	discard	The baseline remains the best performer after 47 experiments, suggesting the cur
+exp49	Decrease ASPECT_RATIO from 32 to 24	1.317463	15.5	48301	14.8	442	discard	Experiment 48 showed that reducing ASPECT_RATIO from 32 to 16 gave significantly
+exp50	Decrease ASPECT_RATIO from 32 to 20	1.331364	15.5	43565	13.4	401	discard	The baseline remains the best performer at 1.2969 val_bpb. Recent experiments wi
+exp51	Increase ASPECT_RATIO from 32 to 48	1.374509	20.7	28257	15.8	259	discard	The baseline at ASPECT_RATIO=32 remains the best performer. Recent experiments s
+exp52	Decrease ASPECT_RATIO from 32 to 28	1.326242	15.5	45227	13.9	415	discard	The baseline (ASPECT_RATIO=32) remains the best performer at 1.2969 val_bpb. Pre
+exp53	Decrease ASPECT_RATIO from 32 to 26	1.318572	15.5	47920	14.8	440	discard	The baseline with ASPECT_RATIO=32 remains the best performer. Recent experiments
+exp54	Increase HEAD_DIM from 128 to 144	1.330512	16.3	41986	15.3	384	discard	After 53 experiments, the baseline remains best. Most attempts to reduce MATRIX_
+exp55	Increase DEVICE_BATCH_SIZE from default to 9	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp56	Decrease ASPECT_RATIO from 32 to 30	1.304657	15.5	53280	16.4	489	discard	The baseline with ASPECT_RATIO=32 achieved the best val_bpb so far at 1.2969. Re
+exp57	Decrease ASPECT_RATIO from 32 to 31	1.323134	15.5	46620	14.3	426	discard	The trend shows that smaller aspect ratios generally perform better, with exp56 
+exp58	Increase ASPECT_RATIO from 32 to 36	1.378394	20.7	27916	15.5	255	discard	The recent experiments around aspect ratio show that 30 gave 1.3047 (very close 
+exp59	Decrease ASPECT_RATIO from 32 to 29	1.334235	15.5	42624	13.1	392	discard	The search around ASPECT_RATIO has shown that values slightly below 32 tend to p
+exp60	Decrease ASPECT_RATIO from 32 to 33	1.367037	20.7	29304	16.4	269	discard	The baseline (ASPECT_RATIO=32) remains the best performer. Recent experiments sh
+exp61	Decrease ASPECT_RATIO from 32 to 34	1.350385	20.7	32247	18.0	295	discard	The recent experiments around aspect ratio show a pattern where values closer to
+exp62	Increase HEAD_DIM from 128 to 112	1.363061	19.5	32590	14.8	298	discard	The experiments show that smaller aspect ratios and head dimensions tend to perf
+exp63	Increase DEVICE_BATCH_SIZE from default to 15	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp64	Decrease ASPECT_RATIO from 32 to 35	1.360941	20.7	29930	16.8	276	discard	The baseline is still the best result, but experiments 60-61 showed that aspect 
+exp65	Decrease WEIGHT_DECAY from 0.2 to 0.15	1.328479	15.5	44259	13.6	406	discard	The baseline with weight decay 0.2 achieved the best val_bpb so far. Experiment 
+exp66	Increase DEVICE_BATCH_SIZE from default to 11	0.000000	0.0	0	0.0	0	crash	training crashed or timed out
+exp67	Decrease WEIGHT_DECAY from 0.2 to 0.0	1.323238	15.5	47254	14.6	434	discard	Experiments exp7 and exp65 showed that reducing weight decay from 0.2 to 0.1 and
+exp68	Increase WARMUP_RATIO from 0.0 to 0.05	1.334810	15.5	44577	13.7	410	discard	The baseline is still the best performer. Since most architectural changes have 
+exp69	Increase EMBEDDING_LR from 0.4 to 0.45	1.316520	15.5	49300	15.2	452	discard	The baseline is still the best result, suggesting the default hyperparameters ar
+exp70	Decrease UNEMBEDDING_LR from 0.004 to 0.002	1.342919	15.5	49218	15.2	452	discard	The baseline remains the best result, and all learning rate modifications to oth
+exp71	Increase EMBEDDING_LR from 0.4 to 0.35	1.317552	15.5	48285	14.9	443	discard	The baseline remains the best result despite 70 experiments, suggesting the curr
+exp72	Increase UNEMBEDDING_LR from 0.004 to 0.005	1.328059	15.5	46906	14.4	430	discard	The baseline remains unbeaten after 71 experiments. Most learning rate modificat
+exp73	Decrease UNEMBEDDING_LR from 0.004 to 0.003	1.356027	15.5	40306	12.4	370	discard	The baseline remains the best performer at 1.2969 val_bpb. Recent experiments sh
+exp74	Increase SCALAR_LR from 0.4 to 0.45	1.354124	15.5	39574	12.1	363	discard	The baseline remains the best result, and many learning rate experiments have fo
+exp75	Decrease UNEMBEDDING_LR from 0.004 to 0.0035	1.354855	15.5	39986	12.2	366	discard	The baseline (exp0) remains the best result at 1.2969 val_bpb. Recent experiment
+exp76	Decrease EMBEDDING_LR from 0.4 to 0.36	1.341811	15.5	40639	12.4	371	discard	The baseline (exp0) remains the best performer at 1.2969 val_bpb. Recent experim
+exp77	Increase WARMDOWN_RATIO from 0.5 to 0.6	1.342039	15.5	40959	12.5	374	discard	The baseline remains the best result after 76 experiments. Since many parameter 
+exp78	Decrease EMBEDDING_LR from 0.4 to 0.38	1.341231	15.5	40945	12.6	376	discard	The baseline remains the best performer at 1.2969 val_bpb. Recent experiments ar
+exp79	Decrease DEVICE_BATCH_SIZE from default to manual override of 4	1.310713	14.0	51247	15.7	469	discard	The baseline (exp0) remains the best performer at 1.2969 val_bpb with 530 steps.
+exp80	Increase UNEMBEDDING_LR from 0.004 to 0.0045	1.311835	15.5	53630	16.6	492	discard	The baseline remains the best performer, and we've exhaustively explored most ar
+exp81	Decrease EMBEDDING_LR from 0.4 to 0.39	1.308200	15.5	51615	15.9	474	discard	The baseline remains the best result, but several experiments with EMBEDDING_LR 
+exp82	Increase UNEMBEDDING_LR from 0.004 to 0.0048	1.312735	15.5	51930	16.0	476	discard	The baseline remains unbeaten despite 81 experiments. Recent experiments (exp80,
+exp83	Increase UNEMBEDDING_LR from 0.004 to 0.0042	1.302157	15.5	54945	17.0	504	discard	The baseline remains the best performer at 1.2969 val_bpb. Recent experiments (e
+exp84	Increase UNEMBEDDING_LR from 0.004 to 0.0041	1.295866	15.5	57589	17.7	527	keep	Experiments 83 and 82 show that slightly increasing UNEMBEDDING_LR improves perf
+exp85	Increase UNEMBEDDING_LR from 0.0041 to 0.0043	1.312545	15.5	51930	15.9	475	discard	The last experiment (exp84) achieved the best val_bpb so far by increasing UNEMB
+exp86	Decrease UNEMBEDDING_LR from 0.0041 to 0.004	1.308202	15.5	51930	15.9	475	discard	The current best result (1.2959) came from increasing UNEMBEDDING_LR to 0.0041, 
+exp87	Decrease UNEMBEDDING_LR from 0.0041 to 0.00405	1.320147	15.5	47936	14.7	438	discard	The current best result (1.2959) came from increasing UNEMBEDDING_LR to 0.0041. 
+exp88	Decrease UNEMBEDDING_LR from 0.0041 to 0.00408	1.350160	15.5	38256	11.7	352	discard	The best result so far came from setting UNEMBEDDING_LR to 0.0041 in exp84. Sinc
+exp89	Decrease UNEMBEDDING_LR from 0.0041 to 0.00407	1.359374	15.5	36666	11.2	335	discard	The current best result (1.2959) came from setting UNEMBEDDING_LR to 0.0041. Rec
+exp90	Decrease UNEMBEDDING_LR from 0.0041 to 0.00409	1.355157	15.5	37308	11.4	343	discard	The current best is at 0.0041, and experiments show that decreasing to 0.004 (ex
+exp91	Decrease MATRIX_LR from 0.0435 to 0.0430	1.346294	15.5	39294	12.1	361	discard	The best result (exp84) came from fine-tuning UNEMBEDDING_LR around 0.0041. Sinc
+exp92	Decrease MATRIX_LR from 0.0435 to 0.0425	1.342090	15.5	40890	12.5	374	discard	The current best result has UNEMBEDDING_LR at 0.0041, and we've exhaustively tes
+exp93	Decrease MATRIX_LR from 0.0435 to 0.0420	1.335941	15.5	42899	13.1	393	discard	The current best experiment (exp84) has UNEMBEDDING_LR=0.0041. Previous attempts
+exp94	Decrease MATRIX_LR from 0.0435 to 0.0415	1.335154	15.5	42624	13.1	392	discard	The current best result has UNEMBEDDING_LR=0.0041, and I've been systematically 
+exp95	Decrease MATRIX_LR from 0.0435 to 0.0410	1.337514	15.5	42248	13.0	389	discard	The trend from experiments 91-94 shows that decreasing MATRIX_LR consistently im
+exp96	Increase UNEMBEDDING_LR from 0.0041 to 0.00415	1.325427	15.5	45954	14.1	420	discard	The best result so far (exp84) increased UNEMBEDDING_LR from 0.004 to 0.0041, ac
+exp97	Increase UNEMBEDDING_LR from 0.0041 to 0.00412	1.324803	15.5	45984	14.2	422	discard	The best result so far (exp84) came from UNEMBEDDING_LR = 0.0041, improving over
+exp98	Increase UNEMBEDDING_LR from 0.0041 to 0.00413	1.325184	15.5	46000	14.1	420	discard	The best result so far (exp84, val_bpb=1.2959) used UNEMBEDDING_LR=0.0041. Recen
+exp99	Increase UNEMBEDDING_LR from 0.0041 to 0.00411	1.319143	15.5	47920	14.8	440	discard	The current best result uses UNEMBEDDING_LR=0.0041, and recent experiments show 
+exp100	Decrease MATRIX_LR from 0.0435 to 0.0440	1.330955	15.5	43897	13.5	404	discard	The current best result has UNEMBEDDING_LR at 0.0041 and MATRIX_LR at 0.0435. Re

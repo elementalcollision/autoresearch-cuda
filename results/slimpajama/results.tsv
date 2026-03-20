@@ -1,0 +1,25 @@
+exp	description	val_bpb	peak_mem_gb	tok_sec	mfu	steps	status	notes
+exp0	baseline (no modifications)	1.541336	15.5	48650	14.9	445	baseline	depth=8, Apple M5 Max
+exp1	Decrease DEVICE_BATCH_SIZE from default to 4 to increase gradient steps	1.537377	14.0	49900	15.3	457	keep	The key insight is that maximizing gradient steps within the fixed time budget i
+exp2	Decrease DEVICE_BATCH_SIZE from 4 to 2 to further increase gradient steps	1.526809	13.5	54315	16.7	496	keep	Following the successful pattern from exp1, reducing batch size from 4 to 2 shou
+exp3	Decrease DEVICE_BATCH_SIZE from 2 to 1 to maximize gradient steps	1.525944	13.7	54593	16.9	501	keep	The pattern is clear - smaller batch sizes lead to more gradient steps and bette
+exp4	Increase MATRIX_LR from 0.0435 to 0.05	1.526455	13.7	53315	16.4	488	discard	With the optimal batch size found (DEVICE_BATCH_SIZE=1), we can now focus on opt
+exp5	Decrease MATRIX_LR from 0.0435 to 0.04	1.556992	13.7	43897	13.5	404	discard	The previous attempt to increase MATRIX_LR to 0.05 performed worse than the base
+exp6	Increase SCALAR_LR from 0.4 to 0.5	1.538543	13.7	49650	15.3	455	discard	The scalar learning rate affects layer norm and other scalar parameters. Since w
+exp7	Decrease EMBEDDING_LR from 0.4 to 0.35	1.540077	13.7	49584	15.3	456	discard	The embedding learning rate is currently quite high at 0.4, which might be causi
+exp8	Decrease WEIGHT_DECAY from 0.15 to 0.1	1.543583	13.7	47650	14.7	437	discard	With DEVICE_BATCH_SIZE optimized at 1 for maximum gradient steps, the current we
+exp9	Increase WARMUP_RATIO from 0.0 to 0.05	1.553593	13.7	47920	14.7	438	discard	The current configuration uses no warmup, which can lead to training instability
+exp10	Increase WARMDOWN_RATIO from 0.5 to 0.6	1.547643	13.7	46271	14.2	425	discard	The current best experiment maximizes gradient steps with DEVICE_BATCH_SIZE=1. S
+exp11	Increase DEPTH from default to explore if a deeper model improves performance	1.601703	21.5	28276	17.9	259	discard	All learning rate and regularization experiments have failed to improve on the c
+exp12	Increase EMBEDDING_LR from 0.4 to 0.45	1.545962	13.7	46937	14.4	429	discard	The embedding layer learns input token representations and may benefit from a hi
+exp13	Decrease UNEMBEDDING_LR from 0.0033 to 0.003	1.543567	13.7	48569	14.9	445	discard	The unembedding layer learning rate hasn't been explored yet, and since we've fo
+exp14	Increase ADAM_BETAS from (0.8, 0.95) to (0.85, 0.95)	1.542051	13.7	49284	15.2	453	discard	The current best configuration uses maximum gradient steps with DEVICE_BATCH_SIZ
+exp15	Increase ASPECT_RATIO from 32 to 64	1.608695	24.2	25632	22.5	234	discard	The current best experiments all focused on maximizing gradient steps through sm
+exp16	Decrease WARMDOWN_RATIO from 0.5 to 0.4	1.541701	13.7	48967	15.1	450	discard	The current best result uses aggressive batch size reduction to maximize gradien
+exp17	Decrease SCALAR_LR from 0.4 to 0.35	1.539368	13.7	48951	15.1	449	discard	The current best result comes from maximizing gradient steps with DEVICE_BATCH_S
+exp18	Increase MATRIX_LR from 0.0435 to 0.047	1.546028	13.7	46589	14.3	428	discard	Looking at the history, exp4 (MATRIX_LR=0.05) was slightly worse than baseline w
+exp19	Decrease ASPECT_RATIO from 32 to 16	1.565324	8.5	71000	8.5	651	discard	With many learning rate and regularization experiments showing no improvement, I
+exp20	Decrease HEAD_DIM from 128 to 96	1.610842	16.4	34264	12.4	315	discard	The current HEAD_DIM of 128 may be oversized for this model configuration, leadi
+exp21	Change WINDOW_PATTERN from "SSSL" to "SSLL" to explore different attention patterns	1.544701	13.7	47571	15.7	436	discard	The current best results come from maximizing gradient steps, but we haven't exp
+exp22	Decrease MATRIX_LR from 0.0435 to 0.042	1.539854	13.7	49234	15.2	452	discard	The current best experiment (exp3) achieved val_bpb of 1.5259 with DEVICE_BATCH_
+exp23	Increase UNEMBEDDING_LR from 0.0033 to 0.004	1.552387	13.7	43623	13.3	399	discard	The unembedding layer learning rate has only been tested in one direction (decre
