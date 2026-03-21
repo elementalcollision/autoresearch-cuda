@@ -141,7 +141,9 @@ class LLMBackend(ABC):
 class ClaudeBackend(LLMBackend):
     """Claude API backend using the Anthropic SDK."""
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514"):
+    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+    def __init__(self, model: str | None = None):
         try:
             import anthropic
         except ImportError:
@@ -153,7 +155,8 @@ class ClaudeBackend(LLMBackend):
 
         cred = resolve_api_key()
         self._client = anthropic.Anthropic(api_key=cred.api_key)
-        self._model = model
+        # Model priority: explicit arg > CLAUDE_MODEL env var > default
+        self._model = model or os.environ.get("CLAUDE_MODEL") or self.DEFAULT_MODEL
         self._cred_source = cred.source
 
     def name(self) -> str:
@@ -238,8 +241,12 @@ class OllamaBackend(LLMBackend):
 # Factory
 # ---------------------------------------------------------------------------
 
-def get_llm_backend() -> LLMBackend:
+def get_llm_backend(model: str | None = None) -> LLMBackend:
     """Create the appropriate LLM backend based on available credentials.
+
+    Args:
+        model: Optional model override (e.g. "claude-sonnet-4-20250514").
+               Falls back to CLAUDE_MODEL env var, then default.
 
     Priority:
     1. OLLAMA_MODEL env var → OllamaBackend (local, placeholder)
@@ -255,7 +262,7 @@ def get_llm_backend() -> LLMBackend:
     # ClaudeBackend uses resolve_api_key() internally, which checks
     # env var, keychain, and Claude Code credentials in order
     try:
-        return ClaudeBackend()
+        return ClaudeBackend(model=model)
     except RuntimeError:
         raise RuntimeError(
             "No LLM backend configured. Set up credentials:\n"
