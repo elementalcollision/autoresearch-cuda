@@ -142,7 +142,7 @@ uv run run_suite.py                       # Full multi-dataset sweep
 uv run compare_datasets.py                # Cross-dataset analysis + charts
 ```
 
-**Available datasets**: climbmix (default), fineweb-edu, fineweb-edu-high, cosmopedia-v2, slimpajama, python-edu.
+**Available datasets**: climbmix (default), fineweb-edu, fineweb-edu-high, cosmopedia-v2, slimpajama, fineweb, github-code-python.
 
 For remote multi-dataset sweeps:
 

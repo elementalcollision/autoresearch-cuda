@@ -26,7 +26,7 @@ from datetime import datetime
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
-DATASET_ORDER = ["climbmix", "fineweb-edu", "cosmopedia-v2", "slimpajama", "fineweb-edu-high", "python-edu"]
+DATASET_ORDER = ["climbmix", "fineweb-edu", "cosmopedia-v2", "slimpajama", "fineweb-edu-high", "fineweb", "github-code-python"]
 
 
 def parse_results(tsv_path):
