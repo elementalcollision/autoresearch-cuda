@@ -25,3 +25,6 @@ dev/
 results/**/results.tsv
 results/**/manifest.json
 !results/**/.gitkeep
+
+# Suite PID lock file
+.suite.pid

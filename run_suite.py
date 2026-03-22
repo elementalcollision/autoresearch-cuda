@@ -579,6 +579,72 @@ def print_status():
 
 
 # ---------------------------------------------------------------------------
+# PID file locking — prevent duplicate suite runs
+# ---------------------------------------------------------------------------
+
+PIDFILE = PROJECT_ROOT / ".suite.pid"
+
+
+def _acquire_pidlock() -> bool:
+    """Write our PID to the lock file. Returns False if another suite is running."""
+    if PIDFILE.exists():
+        try:
+            old_pid = int(PIDFILE.read_text().strip())
+            # Check if the old process is still alive
+            try:
+                os.kill(old_pid, 0)  # signal 0 = existence check
+                # Process exists — is it actually a run_suite.py?
+                import platform
+                if platform.system() == "Linux":
+                    cmdline_path = f"/proc/{old_pid}/cmdline"
+                    if os.path.exists(cmdline_path):
+                        with open(cmdline_path) as f:
+                            cmdline = f.read()
+                        if "run_suite" in cmdline:
+                            print(f"\n  ❌ ERROR: Another run_suite.py is already running (PID {old_pid})")
+                            print(f"     Kill it first:  kill {old_pid}")
+                            print(f"     Or force:       rm {PIDFILE} && re-run\n")
+                            return False
+                        # PID exists but isn't run_suite — stale lock
+                    else:
+                        # No /proc entry — stale lock
+                        pass
+                else:
+                    # macOS / other: PID is alive, assume it's a suite
+                    print(f"\n  ❌ ERROR: Another run_suite.py may be running (PID {old_pid})")
+                    print(f"     Kill it first:  kill {old_pid}")
+                    print(f"     Or force:       rm {PIDFILE} && re-run\n")
+                    return False
+            except ProcessLookupError:
+                # PID doesn't exist — stale lock file
+                pass
+            except PermissionError:
+                # Process exists but we can't signal it — assume alive
+                print(f"\n  ❌ ERROR: Another run_suite.py may be running (PID {old_pid})")
+                print(f"     Kill it first:  kill {old_pid}")
+                print(f"     Or force:       rm {PIDFILE} && re-run\n")
+                return False
+        except (ValueError, OSError):
+            # Corrupt PID file — remove it
+            pass
+
+    PIDFILE.write_text(str(os.getpid()))
+    return True
+
+
+def _release_pidlock():
+    """Remove the PID lock file."""
+    try:
+        if PIDFILE.exists():
+            # Only remove if it's still our PID
+            stored = int(PIDFILE.read_text().strip())
+            if stored == os.getpid():
+                PIDFILE.unlink()
+    except (ValueError, OSError):
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -662,6 +728,12 @@ def main():
     if args.status:
         print_status()
         return
+
+    # --- PID lock (prevent duplicate suite runs) ---
+    if not _acquire_pidlock():
+        sys.exit(1)
+    import atexit
+    atexit.register(_release_pidlock)
 
     # --- Determine run tag ---
     tag = args.tag or datetime.now().strftime("%b%d").lower()
