@@ -18,5 +18,10 @@ AGENTS.md
 # Experimental code/artifacts
 dev/
 
-# Results file (root only — results/<dataset>/results.tsv is tracked)
+# Results — NEVER track experiment data in git.
+# Each deployment produces its own results; tracking them causes
+# cross-contamination when code is cloned to a new GPU instance.
 /results.tsv
+results/**/results.tsv
+results/**/manifest.json
+!results/**/.gitkeep

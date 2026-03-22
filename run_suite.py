@@ -371,6 +371,56 @@ def _model_slug(model: str | None) -> str | None:
     return slug
 
 
+def _write_deployment_manifest(results_dir, tag: str):
+    """Write a manifest.json with hardware provenance for this deployment.
+
+    This creates a tamper-evident record of which GPU produced the results
+    in this directory. Used by rsync scripts to validate data integrity.
+    """
+    import json
+    from datetime import datetime
+
+    manifest_path = results_dir / "manifest.json"
+
+    try:
+        from backends import get_hardware_info
+        hw = get_hardware_info()
+        gpu_name = hw.get("chip_name", "unknown")
+        gpu_vram_gb = round(hw.get("memory_gb", 0), 1)
+        gpu_cores = hw.get("gpu_cores", 0)
+        chip_tier = hw.get("chip_tier", "unknown")
+    except Exception:
+        gpu_name = "unknown"
+        gpu_vram_gb = 0
+        gpu_cores = 0
+        chip_tier = "unknown"
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            cc = torch.cuda.get_device_capability(0)
+            compute_cap = f"{cc[0]}.{cc[1]}"
+        else:
+            compute_cap = "n/a"
+    except Exception:
+        compute_cap = "n/a"
+
+    manifest = {
+        "gpu_name": gpu_name,
+        "gpu_vram_gb": gpu_vram_gb,
+        "gpu_cores_sms": gpu_cores,
+        "chip_tier": chip_tier,
+        "compute_capability": compute_cap,
+        "tag": tag,
+        "timestamp": datetime.now().isoformat(),
+        "results_dir": str(results_dir),
+    }
+
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"  Manifest: {manifest_path} ({gpu_name}, {gpu_vram_gb} GB)")
+
+
 def get_results_dir(dataset_name, model: str | None = None):
     """Get the results directory for a dataset, isolated by model.
 
@@ -429,6 +479,9 @@ def run_agent(dataset_name, tag, max_experiments=80, model=None):
     results_dir = get_results_dir(dataset_name, model)
     results_tsv = str(results_dir / "results.tsv")
     run_tag = f"{tag}-{dataset_name}"
+
+    # Write deployment manifest — hardware provenance for this run
+    _write_deployment_manifest(results_dir, tag)
 
     existing = count_experiments(dataset_name, model)
     model_display = model or os.environ.get("CLAUDE_MODEL") or "default"

@@ -102,9 +102,9 @@ def get_hardware_info():
 
             # Classify tier based on GPU name
             name_lower = props.name.lower()
-            if any(x in name_lower for x in ["h100", "h200", "a100", "h800"]):
+            if any(x in name_lower for x in ["h100", "h200", "a100", "h800", "b200", "b300"]):
                 info["chip_tier"] = "datacenter"
-            elif any(x in name_lower for x in ["l40", "a40", "rtx 6000", "a6000"]):
+            elif any(x in name_lower for x in ["l40", "a40", "rtx 6000", "a6000", "rtx pro"]):
                 info["chip_tier"] = "professional"
             elif any(x in name_lower for x in ["rtx 4000", "rtx 3000", "rtx 5000"]):
                 info["chip_tier"] = "professional"
@@ -175,9 +175,16 @@ def get_peak_flops(hw_info=None):
 
     # NVIDIA GPU FLOPS lookup (bf16 dense, not sparse)
     nvidia_flops = {
+        # Blackwell
+        "b200": 2250e12,
+        "b300": 2250e12,
+        "rtx pro 6000": 420e12,     # Blackwell professional
+        "rtx 5090": 419e12,         # Blackwell consumer
+        # Hopper
         "h100": 756e12,
         "h200": 756e12,
         "h800": 756e12,
+        # Ampere
         "a100": 312e12,
         "l40s": 362e12,
         "l40": 181e12,
@@ -190,6 +197,13 @@ def get_peak_flops(hw_info=None):
 
     for key, flops in nvidia_flops.items():
         if key in chip:
+            # Scale FLOPS for MIG/vGPU partitions by VRAM ratio
+            # (PyTorch reports full SM count even on MIG slices)
+            full_vram = {"a100": 80, "h100": 80, "h200": 141, "a40": 48}
+            actual_vram = hw_info.get("memory_gb", 0)
+            for gpu_key, full_gb in full_vram.items():
+                if gpu_key in chip and actual_vram > 0 and actual_vram < full_gb * 0.9:
+                    return flops * (actual_vram / full_gb)
             return flops
 
     # Fall back to Apple Silicon estimate
@@ -218,28 +232,41 @@ def suggest_hyperparameters(hw_info=None):
     mem_gb = hw_info["memory_gb"]
     tier = hw_info["chip_tier"]
 
-    # NVIDIA GPU tiers
-    if tier == "datacenter":
-        return {
-            "depth": 12,
-            "device_batch_size": 64,
-            "total_batch_size": 2**17,  # 128K tokens
-            "eval_tokens_multiplier": 10,
-        }
-    elif tier == "professional":
-        return {
-            "depth": 10,
-            "device_batch_size": 32,
-            "total_batch_size": 2**16,  # 64K tokens
-            "eval_tokens_multiplier": 10,
-        }
-    elif tier == "consumer":
-        return {
-            "depth": 8,
-            "device_batch_size": 16,
-            "total_batch_size": 2**15,  # 32K tokens
-            "eval_tokens_multiplier": 10,
-        }
+    # NVIDIA GPU tiers — VRAM-aware to handle MIG slices correctly
+    # (e.g., A100 MIG 20C has only 20 GB VRAM but "datacenter" tier by name)
+    if tier in ("datacenter", "professional", "consumer"):
+        if mem_gb >= 60:
+            # Full datacenter GPUs: H100 (80 GB), A100 (80 GB), H200 (141 GB)
+            return {
+                "depth": 12,
+                "device_batch_size": 64,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+            }
+        elif mem_gb >= 30:
+            # Mid-range: L40S (48 GB), RTX 6000 Ada (48 GB), A100 MIG 40 GB
+            return {
+                "depth": 10,
+                "device_batch_size": 32,
+                "total_batch_size": 2**16,  # 64K tokens
+                "eval_tokens_multiplier": 10,
+            }
+        elif mem_gb >= 16:
+            # Constrained: RTX 4000 Ada (20 GB), A100 MIG 20C, A40 MIG
+            return {
+                "depth": 10,
+                "device_batch_size": 32,
+                "total_batch_size": 2**16,  # 64K tokens
+                "eval_tokens_multiplier": 10,
+            }
+        else:
+            # Small VRAM: A100 MIG 10 GB, A16, consumer GPUs < 16 GB
+            return {
+                "depth": 8,
+                "device_batch_size": 16,
+                "total_batch_size": 2**15,  # 32K tokens
+                "eval_tokens_multiplier": 10,
+            }
 
     # Apple Silicon tiers
     if tier == "ultra" or mem_gb >= 128:

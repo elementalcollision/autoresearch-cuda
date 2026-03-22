@@ -23,10 +23,11 @@ class ExperimentResult:
     steps: int         # training steps completed
     status: str        # "baseline", "keep", "discard", "crash"
     notes: str         # extra notes
+    gpu_name: str = "" # hardware fingerprint (e.g. "NVIDIA RTX PRO 6000 Blackwell Server Edition")
 
 
-# TSV header matching the format used by characterization sessions
-HEADER = "exp\tdescription\tval_bpb\tpeak_mem_gb\ttok_sec\tmfu\tsteps\tstatus\tnotes\n"
+# TSV header — gpu_name column provides hardware provenance for each row
+HEADER = "exp\tdescription\tval_bpb\tpeak_mem_gb\ttok_sec\tmfu\tsteps\tstatus\tnotes\tgpu_name\n"
 
 
 def init_results_tsv(path: str = "results.tsv") -> None:
@@ -60,7 +61,8 @@ def append_result(path: str, result: ExperimentResult) -> None:
         f"{result.mfu:.1f}\t"
         f"{result.steps}\t"
         f"{result.status}\t"
-        f"{result.notes}\n"
+        f"{result.notes}\t"
+        f"{result.gpu_name}\n"
     )
     atomic_append(path, line)
 
@@ -88,6 +90,7 @@ def load_results(path: str = "results.tsv") -> list[ExperimentResult]:
                     steps=int(row.get("steps", 0)),
                     status=row.get("status", ""),
                     notes=row.get("notes", ""),
+                    gpu_name=row.get("gpu_name", ""),  # backward-compat: empty for legacy TSVs
                 ))
             except (ValueError, TypeError):
                 continue

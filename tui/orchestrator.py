@@ -356,6 +356,7 @@ class ExperimentOrchestrator:
                 steps=final.num_steps,
                 status="baseline",
                 notes=f"depth={final.depth}, {final.chip}",
+                gpu_name=self._hw_info.get("chip_name", "unknown"),
             )
             self.best_val_bpb = final.val_bpb
             self.best_experiment = "exp0 (baseline)"
@@ -366,6 +367,7 @@ class ExperimentOrchestrator:
                 val_bpb=0.0, peak_mem_gb=0.0, tok_sec=0,
                 mfu=0.0, steps=0, status="crash",
                 notes="baseline training failed",
+                gpu_name=self._hw_info.get("chip_name", "unknown"),
             )
 
         append_result(self._results_path, result)
@@ -481,6 +483,7 @@ class ExperimentOrchestrator:
                 steps=final.num_steps,
                 status=status,
                 notes=proposal.reasoning[:80],
+                gpu_name=self._hw_info.get("chip_name", "unknown"),
             )
         else:
             # Crash
@@ -494,6 +497,7 @@ class ExperimentOrchestrator:
                 val_bpb=0.0, peak_mem_gb=0.0, tok_sec=0,
                 mfu=0.0, steps=0, status="crash",
                 notes="training crashed or timed out",
+                gpu_name=self._hw_info.get("chip_name", "unknown"),
             )
 
         append_result(self._results_path, result)
