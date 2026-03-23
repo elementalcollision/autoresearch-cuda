@@ -119,6 +119,15 @@ DATASETS = {
         "min_score": None,
         "est_source_size_gb": 0.5,
     },
+    "pubmed-abstract": {
+        "description": "PubMed Abstracts: 27.7M biomedical/scientific abstracts from PubMed",
+        "base_url": "https://huggingface.co/datasets/uiyunkim-hub/pubmed-abstract/resolve/refs%2Fconvert%2Fparquet/default/train",
+        "source_files": [f"{i:04d}.parquet" for i in range(52)],
+        "text_column": "abstract",  # NOTE: source column is "abstract", written as "text" in output shards
+        "extra_columns": ["pmid"],
+        "min_score": None,
+        "est_source_size_gb": 0.28,  # per file (~280 MB × 52 = ~14.6 GB total)
+    },
     "slimpajama-627b": {
         "description": "SlimPajama-627B: full deduplicated RedPajama (627B tokens, 7 sources)",
         "base_url": "https://huggingface.co/datasets/gmongaras/SlimPajama-627B_Reupload/resolve/refs%2Fconvert%2Fparquet/default/train",
