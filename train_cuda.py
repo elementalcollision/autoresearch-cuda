@@ -128,10 +128,16 @@ class Block(nn.Module):
         super().__init__()
         self.attn = CausalSelfAttention(config, layer_idx)
         self.mlp = MLP(config)
+        self.use_checkpoint = ACTIVATION_CHECKPOINTING
 
     def forward(self, x, ve, cos_sin, window_size):
         x = x + self.attn(norm(x), ve, cos_sin, window_size)
-        x = x + self.mlp(norm(x))
+        if self.use_checkpoint:
+            x = x + torch.utils.checkpoint.checkpoint(
+                lambda inp: self.mlp(norm(inp)), x, use_reentrant=False
+            )
+        else:
+            x = x + self.mlp(norm(x))
         return x
 
 
@@ -328,9 +334,19 @@ WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
 WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
+# Scale LRs with batch size (sqrt scaling rule)
+# Reference batch: 2^16 (Ada/Ampere default). Scale=1.0 for them.
+_batch_lr_scale = (TOTAL_BATCH_SIZE / 2**16) ** 0.5
+EMBEDDING_LR *= _batch_lr_scale
+UNEMBEDDING_LR *= _batch_lr_scale
+MATRIX_LR *= _batch_lr_scale
+SCALAR_LR *= _batch_lr_scale
+
 # Model size
 DEPTH = _hp_defaults['depth']
 DEVICE_BATCH_SIZE = _hp_defaults['device_batch_size']
+COMPILE_MODE = _hp_defaults.get('compile_mode', 'reduce-overhead')
+ACTIVATION_CHECKPOINTING = _hp_defaults.get('activation_checkpointing', False)
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
@@ -339,6 +355,22 @@ DEVICE_BATCH_SIZE = _hp_defaults['device_batch_size']
 t_start = time.time()
 torch.manual_seed(42)
 torch.set_float32_matmul_precision("high")
+
+# Architecture-specific torch._inductor configuration
+_gpu_arch = _hw_info.get("gpu_arch", "unknown")
+if _gpu_arch in ("hopper", "blackwell"):
+    # Hopper/Blackwell: full autotuning — coordinate descent for GEMM tile sizes,
+    # unique kernel names for profiling, graph cache for faster restarts
+    torch._inductor.config.coordinate_descent_tuning = True
+    torch._inductor.config.triton.unique_kernel_names = True
+    torch._inductor.config.fx_graph_cache = True
+    print(f"Inductor: Hopper/Blackwell optimizations enabled (coord descent + graph cache)")
+elif _gpu_arch == "ampere":
+    # Ampere: coordinate descent helps but skip unique kernel names (slower compile)
+    torch._inductor.config.coordinate_descent_tuning = True
+    torch._inductor.config.fx_graph_cache = True
+    print(f"Inductor: Ampere optimizations enabled (coord descent + graph cache)")
+# Ada Lovelace / other: default inductor config (fast compilation priority)
 
 # CUDA device setup
 device = torch.device("cuda")
@@ -352,9 +384,11 @@ flash_sdp = torch.backends.cuda.flash_sdp_enabled()
 print(f"FlashAttention via SDPA: {'enabled' if flash_sdp else 'disabled'}")
 
 PEAK_FLOPS = get_peak_flops(_hw_info)
-print(f"Backend: CUDA ({_hw_info['chip_name']})")
-print(f"VRAM: {_hw_info['memory_gb']:.0f} GB")
+print(f"Backend: CUDA ({_hw_info['chip_name']}, {_hw_info.get('gpu_arch', 'unknown')}, cc {_hw_info.get('compute_capability', '?')})")
+print(f"VRAM: {_hw_info['memory_gb']:.0f} GB, SMs: {_hw_info.get('gpu_cores', '?')}")
 print(f"Peak bf16 FLOPS: {PEAK_FLOPS:.2e}")
+if ACTIVATION_CHECKPOINTING:
+    print(f"Activation checkpointing: enabled (trading compute for memory)")
 
 tokenizer = Tokenizer.from_directory()
 vocab_size = tokenizer.get_vocab_size()
@@ -399,8 +433,8 @@ optimizer = model.setup_optimizer(
 )
 
 # torch.compile for CUDA — the key performance advantage
-print("Compiling model with torch.compile (reduce-overhead mode)...")
-model = torch.compile(model, mode="reduce-overhead")
+print(f"Compiling model with torch.compile ({COMPILE_MODE} mode)...")
+model = torch.compile(model, mode=COMPILE_MODE)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train", backend="cuda")
 x, y, epoch = next(train_loader)  # prefetch first batch

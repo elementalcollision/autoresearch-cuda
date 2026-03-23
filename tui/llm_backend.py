@@ -35,6 +35,11 @@ Rules:
 - If many experiments have been discarded, try a different direction entirely.
 - The key insight from prior characterization: maximizing gradient steps within the fixed time budget is the dominant factor. Smaller batches = more steps = usually better, up to a point.
 - CUDA-specific: torch.compile fuses kernels, FlashAttention-2 is active via SDPA, bf16 autocast is on. VRAM is the hard constraint — OOM means the batch/model is too large.
+- Architecture-aware defaults are set per GPU generation. The hardware line below shows your specific GPU architecture.
+- Ada Lovelace (RTX 4000/4090, sm_89): 105-330 TFLOPS bf16. Sweet spot: depth 10-12, batch 32-48. Key lever: maximize training steps in the time budget. Small model → fast iterations.
+- Ampere (A100, sm_80): 312 TFLOPS bf16, 1.5 TB/s bandwidth. Sweet spot: depth 10-12, batch 48-64. Key lever: batch size to saturate memory bandwidth. max-autotune compile active.
+- Hopper (H100/H200, sm_90): 756 TFLOPS bf16. FlashAttention-3 active. Sweet spot: depth 14+, batch 64-96. Key lever: model size — compute is abundant, need a bigger model to saturate. Activation checkpointing may be enabled.
+- Blackwell (RTX Pro 6000/B-series, sm_120): 420-2250 TFLOPS bf16, 188+ SMs. Sweet spot: depth 16+, batch 128+. Key lever: MUST use large model AND large batch simultaneously. 86% MFU proven achievable. If MFU <30%, increase both depth and batch aggressively.
 
 Respond in EXACTLY this format (no markdown fences around the whole response):
 
@@ -55,7 +60,7 @@ Here is the experiment history so far:
 
 {results_history}
 
-Hardware: {chip_name}, {memory_gb:.0f} GB VRAM, {gpu_cores} SMs, ~{peak_tflops:.1f} TFLOPS bf16
+Hardware: {chip_name} ({gpu_arch}), {memory_gb:.0f} GB VRAM, {gpu_cores} SMs, ~{peak_tflops:.1f} TFLOPS bf16
 
 Current best val_bpb: {best_val_bpb:.6f} (from {best_experiment})
 
@@ -175,6 +180,14 @@ class ClaudeBackend(LLMBackend):
         except anthropic.AuthenticationError:
             return False
 
+    # Per-architecture hints for the LLM agent
+    _ARCH_HINTS = {
+        "ada_lovelace": "\nHint: On Ada Lovelace, prioritize maximizing training steps. Smaller batches often win because they yield more gradient updates in 5 minutes.",
+        "ampere": "\nHint: On Ampere A100, memory bandwidth is the bottleneck. Increase device_batch_size to keep the GPU fed. depth 10-12 is optimal for this model size.",
+        "hopper": "\nHint: On Hopper, compute is abundant. Push model size (depth 14-16) and use large batches. Activation checkpointing is enabled for memory efficiency.",
+        "blackwell": "\nHint: On Blackwell, you MUST use both large model (depth 16+) AND large batch (device_batch 128+) to saturate 188 SMs. If MFU is below 40%, the model is too small or batch too small.",
+    }
+
     def generate_experiment(
         self,
         current_code: str,
@@ -183,16 +196,18 @@ class ClaudeBackend(LLMBackend):
         best_experiment: str,
         hw_info: dict,
     ) -> ExperimentProposal:
+        arch_hint = self._ARCH_HINTS.get(hw_info.get("gpu_arch", ""), "")
         user_prompt = USER_PROMPT_TEMPLATE.format(
             current_code=current_code,
             results_history=results_history if results_history else "No experiments yet — this will be the first modification after baseline.",
             chip_name=hw_info.get("chip_name", "Unknown"),
+            gpu_arch=hw_info.get("gpu_arch", "unknown"),
             memory_gb=hw_info.get("memory_gb", 0),
             gpu_cores=hw_info.get("gpu_cores", 0),
             peak_tflops=hw_info.get("peak_tflops", 0),
             best_val_bpb=best_val_bpb,
             best_experiment=best_experiment,
-        )
+        ) + arch_hint
 
         response = self._client.messages.create(
             model=self._model,

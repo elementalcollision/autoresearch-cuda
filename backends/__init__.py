@@ -100,6 +100,18 @@ def get_hardware_info():
             info["memory_gb"] = props.total_memory / (1024 ** 3)
             info["gpu_cores"] = props.multi_processor_count
 
+            # Architecture detection via compute capability
+            cc = torch.cuda.get_device_capability(0)
+            info["compute_capability"] = f"{cc[0]}.{cc[1]}"
+            arch_map = {
+                (7, 0): "volta", (7, 5): "turing",
+                (8, 0): "ampere", (8, 6): "ampere", (8, 7): "ampere",
+                (8, 9): "ada_lovelace",
+                (9, 0): "hopper",
+                (10, 0): "blackwell",
+            }
+            info["gpu_arch"] = arch_map.get((cc[0], cc[1]), f"sm_{cc[0]}{cc[1]}")
+
             # Classify tier based on GPU name
             name_lower = props.name.lower()
             if any(x in name_lower for x in ["h100", "h200", "a100", "h800", "b200", "b300"]):
@@ -231,12 +243,130 @@ def suggest_hyperparameters(hw_info=None):
 
     mem_gb = hw_info["memory_gb"]
     tier = hw_info["chip_tier"]
+    arch = hw_info.get("gpu_arch", "unknown")
 
-    # NVIDIA GPU tiers — VRAM-aware to handle MIG slices correctly
-    # (e.g., A100 MIG 20C has only 20 GB VRAM but "datacenter" tier by name)
+    # Hopper-specific defaults — H100 (80GB, 756 TFLOPS dense bf16), H200 (141GB)
+    if arch == "hopper":
+        if mem_gb >= 100:
+            # H200 (141 GB) — extra VRAM allows larger batch + activation checkpointing
+            return {
+                "depth": 14,
+                "device_batch_size": 96,
+                "total_batch_size": 2**18,  # 256K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+                "activation_checkpointing": True,
+                "precision_hint": "fp8_candidate",
+            }
+        elif mem_gb >= 60:
+            # H100 (80 GB)
+            return {
+                "depth": 14,
+                "device_batch_size": 64,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+                "activation_checkpointing": False,
+                "precision_hint": "fp8_candidate",
+            }
+        else:
+            # H100 MIG slices
+            return {
+                "depth": 10,
+                "device_batch_size": 32,
+                "total_batch_size": 2**16,  # 64K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "reduce-overhead",
+            }
+
+    # Blackwell-specific defaults — larger model + batch to saturate 420+ TFLOPS
+    if arch == "blackwell":
+        if mem_gb >= 60:
+            return {
+                "depth": 16,
+                "device_batch_size": 128,
+                "total_batch_size": 2**18,  # 256K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+                "activation_checkpointing": True,
+                "precision_hint": "fp8_candidate",
+            }
+        else:
+            # Smaller Blackwell SKUs (future)
+            return {
+                "depth": 12,
+                "device_batch_size": 64,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+                "activation_checkpointing": False,
+                "precision_hint": "bf16",
+            }
+
+    # Ampere-specific defaults — A100 (312 TFLOPS, 108 SMs)
+    if arch == "ampere":
+        if mem_gb >= 60:
+            # A100 80GB — max-autotune justified by 312 TFLOPS
+            return {
+                "depth": 12,
+                "device_batch_size": 64,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+            }
+        elif mem_gb >= 30:
+            # A100 40GB — slightly smaller batch to avoid OOM
+            return {
+                "depth": 10,
+                "device_batch_size": 48,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+            }
+        else:
+            # A100 MIG slices, A10
+            return {
+                "depth": 10,
+                "device_batch_size": 32,
+                "total_batch_size": 2**16,  # 64K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "reduce-overhead",
+            }
+
+    # Ada Lovelace-specific defaults — RTX 4000 Ada (105 TFLOPS), RTX 4090 (330 TFLOPS)
+    if arch == "ada_lovelace":
+        if mem_gb >= 40:
+            # RTX 6000 Ada (48 GB) — enough compute for max-autotune
+            return {
+                "depth": 12,
+                "device_batch_size": 64,
+                "total_batch_size": 2**17,  # 128K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "max-autotune",
+            }
+        elif mem_gb >= 16:
+            # RTX 4000 Ada (20 GB), RTX 4090 (24 GB) — reduce-overhead for fast compile
+            return {
+                "depth": 10,
+                "device_batch_size": 32,
+                "total_batch_size": 2**16,  # 64K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "reduce-overhead",
+            }
+        else:
+            # RTX 4060 etc (< 16 GB)
+            return {
+                "depth": 8,
+                "device_batch_size": 16,
+                "total_batch_size": 2**15,  # 32K tokens
+                "eval_tokens_multiplier": 10,
+                "compile_mode": "reduce-overhead",
+            }
+
+    # Generic NVIDIA GPU tiers — fallback for Volta, Turing, or unrecognized arch
+    # VRAM-aware to handle MIG slices correctly
     if tier in ("datacenter", "professional", "consumer"):
         if mem_gb >= 60:
-            # Full datacenter GPUs: H100 (80 GB), A100 (80 GB), H200 (141 GB)
             return {
                 "depth": 12,
                 "device_batch_size": 64,
@@ -244,7 +374,6 @@ def suggest_hyperparameters(hw_info=None):
                 "eval_tokens_multiplier": 10,
             }
         elif mem_gb >= 30:
-            # Mid-range: L40S (48 GB), RTX 6000 Ada (48 GB), A100 MIG 40 GB
             return {
                 "depth": 10,
                 "device_batch_size": 32,
@@ -252,7 +381,6 @@ def suggest_hyperparameters(hw_info=None):
                 "eval_tokens_multiplier": 10,
             }
         elif mem_gb >= 16:
-            # Constrained: RTX 4000 Ada (20 GB), A100 MIG 20C, A40 MIG
             return {
                 "depth": 10,
                 "device_batch_size": 32,
@@ -260,7 +388,6 @@ def suggest_hyperparameters(hw_info=None):
                 "eval_tokens_multiplier": 10,
             }
         else:
-            # Small VRAM: A100 MIG 10 GB, A16, consumer GPUs < 16 GB
             return {
                 "depth": 8,
                 "device_batch_size": 16,

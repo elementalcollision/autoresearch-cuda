@@ -17,6 +17,8 @@ def _get_nvidia_info() -> dict | None:
                 'gpu_cores': hw['gpu_cores'],
                 'memory_gb': hw['memory_gb'],
                 'peak_tflops': peak_flops / 1e12,
+                'gpu_arch': hw.get('gpu_arch', 'unknown'),
+                'compute_capability': hw.get('compute_capability', 'unknown'),
             }
     except Exception:
         pass
